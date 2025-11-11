@@ -143,7 +143,8 @@ footer,
 </style>
 </head>
 <body>
-
+<!-- Add this right after the white overlay div -->
+<div class="transition-overlay" id="transitionOverlay"></div>
 <div class="white-overlay" id="whiteOverlay"></div>
 
 <div class="intro">
@@ -287,6 +288,39 @@ html,body{
   font-weight:700
 }
 
+/* Add this to your existing CSS */
+.transition-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--button-background);
+  z-index: 10000;
+  transform: scale(0);
+  border-radius: 50%;
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.transition-overlay.expand {
+  animation: expandButton 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes expandButton {
+  0% {
+    transform: scale(0);
+    border-radius: 50%;
+  }
+  50% {
+    transform: scale(3);
+    border-radius: 30%;
+  }
+  100% {
+    transform: scale(10);
+    border-radius: 0;
+  }
+}
 /* Chat App */
 #chatApp{
   display:none;
@@ -335,6 +369,7 @@ header{
   height:36px;
   animation:spin 1s linear infinite
 }
+
 @keyframes spin{to{transform:rotate(360deg)}}
 
 #chat{
@@ -1491,24 +1526,51 @@ pinBtn.addEventListener('click', async () => {
 });
 
 // Helper function to handle successful login
+// Replace the existing proceedWithLogin function with this:
 function proceedWithLogin(username, isAdminUser) {
-  currentUser = { username };
-  localStorage.setItem('chatUser', JSON.stringify(currentUser));
+  const transitionOverlay = document.getElementById('transitionOverlay');
+  const pinBox = document.getElementById('pinBox');
+  const pinBtn = document.getElementById('pinBtn');
   
-  if(isAdminUser){
-    isAdmin = true;
-    adminBtn.style.display = 'inline-block';
-    localStorage.setItem('lastPin', ADMIN_PIN);
-  } else {
-    isAdmin = false;
-    adminBtn.style.display = 'none';
-    localStorage.removeItem('lastPin');
-  }
+  // Get the position and dimensions of the button
+  const buttonRect = pinBtn.getBoundingClientRect();
+  const buttonCenterX = buttonRect.left + buttonRect.width / 2;
+  const buttonCenterY = buttonRect.top + buttonRect.height / 2;
   
-  pinOverlay.style.display = 'none';
-  chatApp.style.display = 'flex';
-  initializeSupabase();
-  loadLocalState();
+  // Position the overlay to start from the button center
+  transitionOverlay.style.left = buttonCenterX + 'px';
+  transitionOverlay.style.top = buttonCenterY + 'px';
+  transitionOverlay.style.transformOrigin = 'center';
+  
+  // Start the expansion animation
+  transitionOverlay.classList.add('expand');
+  
+  // After animation completes, show the chat app
+  setTimeout(() => {
+    currentUser = { username };
+    localStorage.setItem('chatUser', JSON.stringify(currentUser));
+    
+    if(isAdminUser){
+      isAdmin = true;
+      adminBtn.style.display = 'inline-block';
+      localStorage.setItem('lastPin', ADMIN_PIN);
+    } else {
+      isAdmin = false;
+      adminBtn.style.display = 'none';
+      localStorage.removeItem('lastPin');
+    }
+    
+    pinOverlay.style.display = 'none';
+    chatApp.style.display = 'flex';
+    initializeSupabase();
+    loadLocalState();
+    
+    // Remove the overlay after transition
+    setTimeout(() => {
+      transitionOverlay.classList.remove('expand');
+      transitionOverlay.style.transform = 'scale(0)';
+    }, 100);
+  }, 1000);
 }
  
 /* ==== Admin modal toggle ==== */
