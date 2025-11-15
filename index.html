@@ -411,7 +411,7 @@ header{
   margin-top: 0; /* Remove top margin since reactions has bottom margin */
   text-align: right;
   opacity: 0.7;
-  width: 10%;
+  width: 100.67%;
 }
 .options{
   position:absolute;
@@ -989,7 +989,11 @@ async function determineColumnAndSend(username, text) {
   }
   for (const col of candidates) {
     console.log(`Trying insert with column "${col}"...`);
-    const row = { username, [col]: text, id: makeId(), timestamp: formatTS() };
+    const row = { 
+      username, 
+      [col]: text, 
+      created_at: new Date().toISOString() 
+    };
     const res = await tryInsertColumn(col, row);
     if (res.ok) {
       console.log(`Insert ok with column "${col}". Using it from now on.`);
@@ -1011,7 +1015,11 @@ async function determineColumnAndSend(username, text) {
 
 async function insertWithColumn(col, username, text) {
   try {
-    const row = { username, [col]: text, id: makeId(), timestamp: formatTS() };
+    const row = { 
+      username, 
+      [col]: text, 
+      created_at: new Date().toISOString() 
+    };
     const r = await supabase.from(TABLE).insert([row]).select();
     if (r.error) {
       return { ok:false, error:r.error };
@@ -1022,51 +1030,7 @@ async function insertWithColumn(col, username, text) {
   }
 }
 
-async function determineColumnAndSend(username, text) {
-  const candidates = ['content','message','text'];
-  // if we already discovered workingColumn, use it
-  if (workingColumn) {
-    return await insertWithColumn(workingColumn, username, text);
-  }
-  // else try each candidate but safely: use limit 1 test insert then delete it
-  for (const col of candidates) {
-    console.log(`Trying insert with column "${col}"...`);
-    const row = { username, [col]: text };
-    const res = await tryInsertColumn(col, row);
-    if (res.ok) {
-      console.log(`Insert ok with column "${col}". Using it from now on.`);
-      workingColumn = col;
-      return { ok:true, col, data:res.data };
-    } else {
-      // Check PostgREST error shape for missing column: PGRST204
-      const errObj = res.error;
-      console.log(`Insert failed for "${col}":`, errObj);
-      // If message contains "Could not find the 'X' column" we continue
-      const m = errObj && (errObj.message || errObj.error || JSON.stringify(errObj));
-      if (m && m.toString().includes("Could not find the")) {
-        // try next
-        continue;
-      } else {
-        // unknown error (for example, CORS, network, 403)
-        return { ok:false, error: errObj };
-      }
-    }
-  }
-  return { ok:false, error: "No writable text column found among candidates: content,message,text" };
-}
 
-async function insertWithColumn(col, username, text) {
-  try {
-    const row = { username, [col]: text };
-    const r = await supabase.from(TABLE).insert([row]).select();
-    if (r.error) {
-      return { ok:false, error:r.error };
-    }
-    return { ok:true, data: r.data, col };
-  } catch (e) {
-    return { ok:false, error:e };
-  }
-}
 /* ==== Load profiles from Supabase ==== */
 async function loadProfiles() {
   const { data, error } = await supabase.from('users').select('username, pfp_url, pin');
@@ -1153,13 +1117,20 @@ const emojiPicker = `<div class="emoji-picker-btn" data-message="${msg.id}">😀
 // Update the el.innerHTML to include reactions and emoji picker
 
 el.innerHTML = `
-    <img src="${escapeHtml(profilePic)}" alt="pfp" style="width:30px;height:30px;border-radius:50%;margin-right:10px;vertical-align:middle;">
-    <div>${bannedNote}<strong>${escapeHtml(msg.username)}</strong>: ${content}</div>
-    
-    ${reactionsHtml}
-    <div class="emoji-picker-btn" data-message="${msg.id}">😀</div>
-   
-      <div class="timestamp">${escapeHtml(msg.timestamp || '')}</div>
+    <div style="display: flex; align-items: flex-start; gap: 10px;">
+        <img src="${escapeHtml(profilePic)}" alt="pfp" style="width:30px;height:30px;border-radius:50%;flex-shrink:0;">
+        <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px;">
+                ${bannedNote}
+                <strong style="flex-shrink: 0;">${escapeHtml(msg.username)}</strong>
+                <div style="min-width: 0;">${content}</div>
+            </div>
+            <div class="timestamp">${escapeHtml(msg.timestamp || '')}</div>
+            ${reactionsHtml}
+            <div class="emoji-picker-btn" data-message="${msg.id}">😀</div>
+            
+        </div>
+    </div>
 `;
 // Add emoji picker functionality
 // Add emoji picker functionality
@@ -1292,17 +1263,17 @@ async function fetchRecent(){
     }
     
     messages = r.data.map(m => {
-      const text = m.content || m.message || m.text || '';
-      return {
-        id: m.id || makeId(),
-        username: m.username || 'anon',
-        message: text,
-        timestamp: m.timestamp || (m.created_at ? new Date(m.created_at).toLocaleTimeString() : ''),
-        deleted: m.deleted || false,
-        replies: m.replies || null // Add this for reactions
-      };
-    });
-    
+  const text = m.content || m.message || m.text || '';
+  return {
+    id: m.id, // Use the ID from Supabase, not makeId()
+    username: m.username || 'anon',
+    message: text,
+    timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
+    deleted: m.deleted || false,
+    replies: m.replies || null
+  };
+});
+
     saveLocalState();
     clearChatAndRenderAll();
   } catch (e) {
@@ -1320,24 +1291,24 @@ async function subscribeRealtime() {
       return;
     }
     realtimeSubscription = supabase.channel('public:'+TABLE)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: TABLE }, (payload) => {
-        console.log('Realtime INSERT:', payload.new);
-        const m = payload.new;
-        const text = m.content || m.message || m.text || '';
-        const newMessage = {
-          id: m.id || makeId(),
-          username: m.username || 'anon',
-          message: text,
-          timestamp: m.timestamp || (m.created_at ? new Date(m.created_at).toLocaleTimeString() : ''),
-          deleted: m.deleted || false,
-          replies: m.replies || null // Add this
-        };
-        
-        const idx = messages.findIndex(msg => msg.id === newMessage.id);
-        if (idx === -1) {
-          messages.push(newMessage);
-          saveLocalState();
-          renderOneMessage(newMessage, true);
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: TABLE }, (payload) => {
+    console.log('Realtime INSERT:', payload.new);
+    const m = payload.new;
+    const text = m.content || m.message || m.text || '';
+    const newMessage = {
+  id: m.id, // Use the ID from the database
+  username: m.username || 'anon',
+  message: text,
+  timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
+  deleted: m.deleted || false,
+  replies: m.replies || null
+};
+    
+    const idx = messages.findIndex(msg => msg.id === newMessage.id);
+    if (idx === -1) {
+      messages.push(newMessage);
+      saveLocalState();
+      renderOneMessage(newMessage, true);
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: TABLE }, (payload) => {
