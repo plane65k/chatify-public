@@ -1510,6 +1510,70 @@ function initializeSupabase() {
   }
 }
 
+
+
+function initializeSupabase() {
+    try {
+        if (!window.supabase) {
+            console.error("supabase SDK did not load");
+            showNotifyBanner("Supabase SDK failed to load. Check network.");
+            return;
+        }
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // Load bans first
+        loadBansFromSupabase().then(() => {
+            fetchRecent().then(() => {
+                subscribeRealtime();
+                subscribeToBans(); // Add realtime subscription for bans
+                loadProfiles();
+            }).catch(e => console.error(e));
+        });
+        
+    } catch (error) {
+        console.error('Error initializing Supabase:', error);
+        showNotifyBanner('Error connecting to database');
+    }
+}
+
+
+async function subscribeToBans() {
+    try {
+        supabase.channel('public:bans')
+            .on('postgres_changes', { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'bans' 
+            }, (payload) => {
+                const newBan = payload.new;
+                bannedUsers.add(newBan.username);
+                saveLocalState();
+                
+                // If current user is banned, blank their screen
+                if (currentUser && newBan.username === currentUser.username) {
+                    
+                }
+            })
+            .on('postgres_changes', { 
+                event: 'DELETE', 
+                schema: 'public', 
+                table: 'bans' 
+            }, (payload) => {
+                const oldBan = payload.old;
+                bannedUsers.delete(oldBan.username);
+                saveLocalState();
+            })
+            .subscribe();
+        
+    } catch (error) {
+        console.error('Failed to subscribe to bans:', error);
+    }
+}
+
+
+
+
+
 async function fetchRecent(){
   loadingDiv.style.display = 'flex';
   try {
@@ -1711,6 +1775,34 @@ async function sendMessage(){
   messageInput.value = '';
 }
 
+
+
+async function sendMessage(){
+    const text = (messageInput.value || '').trim();
+    if(!text || !currentUser) return;
+    
+    // Check if user is banned
+    if(bannedUsers.has(currentUser.username)){
+        messageInput.value = '';
+        showNotifyBanner('You are banned from sending messages.');
+        return;
+    }
+    
+    // Check if this is a command
+    if (text.startsWith('/') && handleCommand(text)) {
+        messageInput.value = '';
+        return;
+    }
+    
+    const result = await determineColumnAndSend(currentUser.username, text);
+    if (!result.ok) {
+        showNotifyBanner('Send failed: ' + (result.error && result.error.message ? result.error.message : JSON.stringify(result.error)));
+        console.error('Detailed send error:', result.error);
+        return;
+    }
+    
+    messageInput.value = '';
+}
 /* ==== PIN login logic ==== */
 pinBtn.addEventListener('click', async () => {
   const username = (usernameInput.value || '').trim().toLowerCase();
@@ -1797,6 +1889,12 @@ pinBtn.addEventListener('click', async () => {
 // Helper function to handle successful login
 // Replace the existing proceedWithLogin function with this:
 function proceedWithLogin(username, isAdminUser) {
+ if (bannedUsers.has(username)) {
+        alert('Your account has been banned');
+        
+        return;
+    } 
+ 
   const transitionOverlay = document.getElementById('transitionOverlay');
   const pinBox = document.getElementById('pinBox');
   const pinBtn = document.getElementById('pinBtn');
@@ -2134,9 +2232,152 @@ documentationModal.addEventListener('click', (e) => {
   }
 });
 
+
+
+/* ==== Command Handler ==== */
+function handleCommand(text) {
+    if (!text.startsWith('/')) return false;
+    
+    const parts = text.split(' ');
+    const command = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    
+    switch(command) {
+        case '/ban':
+            if (args.length > 0) {
+                const username = args[0];
+                adminBanUser(username);
+                return true;
+            }
+            break;
+        case '/unban':
+            if (args.length > 0) {
+                const username = args[0];
+                adminUnbanUser(username);
+                return true;
+            }
+            break;
+        case '/clear':
+            if (isAdmin) {
+                deleteAllMessages();
+                return true;
+            }
+            break;
+    }
+    return false;
+}
+
+/* ==== Admin Ban Functions (Supabase) ==== */
+async function adminBanUser(username) {
+    if (!isAdmin || !currentUser) {
+        showNotifyBanner('Only admin can use this command');
+        return;
+    }
+    
+    try {
+        // Add to Supabase bans table
+        const { error } = await supabase
+            .from('bans')
+            .insert([{
+                username: username,
+                banned_by: currentUser.username,
+                created_at: new Date().toISOString()
+            }]);
+        
+        if (error) {
+            if (error.code === '23505') { // Unique violation - already banned
+                showNotifyBanner(`${username} is already banned`);
+            } else {
+                showNotifyBanner('Ban failed: ' + error.message);
+            }
+            return;
+        }
+        
+        // Add to local banned users set
+        bannedUsers.add(username);
+        saveLocalState();
+        
+        // Send system message
+        await sendSystemMessage(`${username} has been banned by ${currentUser.username}`);
+        
+        showNotifyBanner(`Successfully banned ${username}`);
+        
+    } catch (error) {
+        console.error('Ban error:', error);
+        showNotifyBanner('Ban error: ' + error.message);
+    }
+}
+
+async function adminUnbanUser(username) {
+    if (!isAdmin || !currentUser) {
+        showNotifyBanner('Only admin can use this command');
+        return;
+    }
+    
+    try {
+        // Remove from Supabase bans table
+        const { error } = await supabase
+            .from('bans')
+            .delete()
+            .eq('username', username);
+        
+        if (error) {
+            showNotifyBanner('Unban failed: ' + error.message);
+            return;
+        }
+        
+        // Remove from local banned users set
+        bannedUsers.delete(username);
+        saveLocalState();
+        
+        // Send system message
+        await sendSystemMessage(`${username} has been unbanned by ${currentUser.username}`);
+        
+        showNotifyBanner(`Successfully unbanned ${username}`);
+        
+    } catch (error) {
+        console.error('Unban error:', error);
+        showNotifyBanner('Unban error: ' + error.message);
+    }
+}
+
+async function sendSystemMessage(text) {
+    const row = { 
+        username: 'SYSTEM', 
+        content: text, 
+        created_at: new Date().toISOString(),
+        server_id: currentServer
+    };
+    
+    const r = await supabase.from(TABLE).insert([row]).select();
+    return r;
+}
+
+/* ==== Load bans from Supabase on startup ==== */
+async function loadBansFromSupabase() {
+    try {
+        const { data, error } = await supabase
+            .from('bans')
+            .select('username');
+        
+        if (error) {
+            console.error('Failed to load bans:', error);
+            return;
+        }
+        
+        if (data) {
+            data.forEach(ban => {
+                bannedUsers.add(ban.username);
+            });
+            saveLocalState();
+            console.log('Loaded bans from Supabase:', bannedUsers);
+        }
+    } catch (error) {
+        console.error('Error loading bans:', error);
+    }
+}
 // NOTE: Ensure your loadProfiles function is defined and accessible.
 </script>
 </body>
 </html>
-
 
