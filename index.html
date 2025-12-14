@@ -682,6 +682,7 @@ a{color:#0a66c2;text-decoration:underline}
     <input id="usernameInput" placeholder="Enter username" autocomplete="off" />
     <input id="pinInput" placeholder="Enter PIN" type="password" autocomplete="current-password" />
     
+    
     <!-- Terms and Conditions between inputs and button -->
     <div style="margin: 10px 0; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; max-height: 120px; overflow-y: auto; background: var(--secondary-background);">
       <div style="font-size: 12px; font-weight: bold; margin-bottom: 5px; color: var(--text-color);">Terms & Conditions:</div>
@@ -1871,6 +1872,54 @@ async function sendMessage(){
     messageInput.value = '';
 }
 /* ==== PIN login logic ==== */
+
+
+const ACCOUNT_WINDOW_MS = 120 * 1000; // 2 minute
+const COOLDOWN_MS = 60 * 60 * 1000;  // 1 hour
+const ACCOUNT_LOG_KEY = 'accountCreationLog';
+const COOLDOWN_KEY = 'accountCooldownUntil';
+
+
+
+
+
+function canCreateAccount() {
+  const now = Date.now();
+
+  const cooldownUntil = Number(localStorage.getItem(COOLDOWN_KEY));
+  if (cooldownUntil && now < cooldownUntil) {
+    const minsLeft = Math.ceil((cooldownUntil - now) / 60000);
+    alert(`Too many accounts created. Try again in ${minsLeft} min.`);
+    return false;
+  }
+
+  let log = JSON.parse(localStorage.getItem(ACCOUNT_LOG_KEY) || '[]');
+
+  // keep only last 1 minute
+  log = log.filter(ts => now - ts < ACCOUNT_WINDOW_MS);
+
+  if (log.length >= 3) {
+    localStorage.setItem(COOLDOWN_KEY, now + COOLDOWN_MS);
+    localStorage.removeItem(ACCOUNT_LOG_KEY);
+    alert('Too many accounts created. Locked for 1 hour.');
+    return false;
+  }
+
+  localStorage.setItem(ACCOUNT_LOG_KEY, JSON.stringify(log));
+  return true;
+}
+
+function recordAccountCreation() {
+  const now = Date.now();
+  let log = JSON.parse(localStorage.getItem(ACCOUNT_LOG_KEY) || '[]');
+  log.push(now);
+  localStorage.setItem(ACCOUNT_LOG_KEY, JSON.stringify(log));
+}
+
+
+
+
+
 pinBtn.addEventListener('click', async () => {
   const username = (usernameInput.value || '').trim().toLowerCase();
   const pin = (pinInput.value || '').trim();
@@ -1897,6 +1946,8 @@ pinBtn.addEventListener('click', async () => {
       .from('users')
       .select('*')
       .eq('username', username);
+      
+      
 
     if (fetchError) {
       console.error('Error checking user:', fetchError);
@@ -1921,6 +1972,9 @@ pinBtn.addEventListener('click', async () => {
 
     // If user doesn't exist, create them
     if (!existingUsers || existingUsers.length === 0) {
+      // If user doesn't exist, create them
+    if (!canCreateAccount()) return;
+
       const { error: insertError } = await supabase
         .from('users')
         .insert([{ 
@@ -1944,6 +1998,7 @@ pinBtn.addEventListener('click', async () => {
         return;
       }
       console.log('Existing user logged in:', username);
+      recordAccountCreation();
       proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
     }
     
