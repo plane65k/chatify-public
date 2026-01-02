@@ -681,7 +681,14 @@ a{color:#0a66c2;text-decoration:underline}
   <div id="pinBox">
     <input id="usernameInput" placeholder="Enter username" autocomplete="off" />
     <input id="pinInput" placeholder="Enter PIN" type="password" autocomplete="current-password" />
-    
+     <input id="verificationCodeInput" placeholder="Verification code (new users only)" 
+           autocomplete="one-time-code" />
+          <div id="verificationCodeLink">
+      <a href="https://plane65k.github.io/chatify-code/" target="_blank" 
+         style="font-size: 12px; color: var(--button-background); text-decoration: underline;">
+        Need a verification code? Click here to get one
+      </a>
+    </div>  
     <!-- Terms and Conditions between inputs and button -->
     <div style="margin: 10px 0; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; max-height: 120px; overflow-y: auto; background: var(--secondary-background);">
       <div style="font-size: 12px; font-weight: bold; margin-bottom: 5px; color: var(--text-color);">Terms & Conditions:</div>
@@ -1874,42 +1881,51 @@ async function sendMessage(){
     
     messageInput.value = '';
 }
-/* ==== PIN login logic ==== */
+
+
+
+
+
+
+
+//PIN BTN LOGIC
+
+
+
+// Add these variables at the top with other element declarations
+const verificationCodeInput = document.getElementById('verificationCodeInput');
+let isNewUser = false;
+
+// Modify the pinBtn event listener:
 pinBtn.addEventListener('click', async () => {
   const username = (usernameInput.value || '').trim().toLowerCase();
   const pin = (pinInput.value || '').trim();
+  const verificationCode = (verificationCodeInput.value || '').trim();
   
   if(!username || !pin) {
     alert('Please enter both username and PIN');
     return;
   }
-
-  // Initialize Supabase first if it hasn't been done yet
-  if (!supabase) {
-    try {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    } catch (error) {
-      console.error('Failed to initialize Supabase:', error);
-      alert('Failed to connect to database');
-      return;
-    }
+  
+  // Show verification code field for new users only
+  if (!isNewUser) {
+    verificationCodeInput.style.display = 'none';
   }
-
+  
+  // Initialize Supabase...
+  // ... (keep existing initialization code)
+  
   try {
     // First, try to get existing user
     const { data: existingUsers, error: fetchError } = await supabase
       .from('users')
       .select('*')
       .eq('username', username);
-
+    
     if (fetchError) {
       console.error('Error checking user:', fetchError);
       
-      // If table doesn't exist, create admin user and proceed
-      if (fetchError.message.includes('Could not find the table') || fetchError.code === '42P01') {
-        console.log('Users table not found, creating admin user...');
-        
-        // For now, allow login without user table for admin
+      if (fetchError.message.includes('Could not find the table')) {
         if (username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN) {
           proceedWithLogin(username, true);
           return;
@@ -1918,30 +1934,72 @@ pinBtn.addEventListener('click', async () => {
           return;
         }
       }
-      
       alert('Database error: ' + fetchError.message);
       return;
     }
-
-    // If user doesn't exist, create them
+    
+    // NEW USER FLOW
     if (!existingUsers || existingUsers.length === 0) {
+      // Show verification code input for new users
+      verificationCodeInput.style.display = 'block';
+      verificationCodeInput.focus();
+      isNewUser = true;
+      
+      // If user hasn't entered verification code yet, ask for it
+      if (!verificationCode) {
+        alert('New users require a verification code. Please enter one.');
+        return;
+      }
+      
+      // Verify the code against Supabase codes table
+      const { data: validCodes, error: codeError } = await supabase
+        .from('codes')
+        .select('*')
+        .eq('code', verificationCode)
+        .eq('used', false)
+        .single();
+      
+      if (codeError || !validCodes) {
+        alert('Invalid or already used verification code.');
+        return;
+      }
+      
+      // Mark the code as used
+      const { error: updateError } = await supabase
+        .from('codes')
+        .update({ 
+          used: true, 
+          used_by: username,
+          used_at: new Date().toISOString() 
+        })
+        .eq('code', verificationCode);
+      
+      if (updateError) {
+        alert('Failed to verify code: ' + updateError.message);
+        return;
+      }
+      
+      // Create new user
       const { error: insertError } = await supabase
         .from('users')
         .insert([{ 
           username: username, 
           pin: pin,
-          pfp_url: 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif'
+          pfp_url: 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif',
+          verification_code_used: verificationCode
         }]);
-
+      
       if (insertError) {
         console.error('Error creating user:', insertError);
         alert('Error creating user: ' + insertError.message);
         return;
       }
+      
       console.log('New user created:', username);
       proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
+      
     } else {
-      // User exists - verify PIN
+      // EXISTING USER FLOW (no verification code needed)
       const user = existingUsers[0];
       if (user.pin !== pin) {
         alert('Wrong PIN');
@@ -1956,6 +2014,71 @@ pinBtn.addEventListener('click', async () => {
     alert('Login failed: ' + error.message);
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Add this function to reset the verification state
+function resetVerificationState() {
+  verificationCodeInput.style.display = 'none';
+  verificationCodeInput.value = '';
+  isNewUser = false;
+}
+
+// Call this when username input changes to detect if user might be new
+usernameInput.addEventListener('input', async (e) => {
+  const username = e.target.value.trim().toLowerCase();
+  
+  if (!username) {
+    resetVerificationState();
+    return;
+  }
+  
+  // Check if username exists
+  if (supabase) {
+    const { data: existingUsers } = await supabase
+      .from('users')
+      .select('username')
+      .eq('username', username)
+      .maybeSingle();
+    
+    if (!existingUsers) {
+      // User doesn't exist, show verification field
+      verificationCodeInput.style.display = 'block';
+      verificationCodeInput.placeholder = 'Verification code required for new users';
+      isNewUser = true;
+    } else {
+      // User exists, hide verification field
+      resetVerificationState();
+    }
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // Helper function to handle successful login
 // Replace the existing proceedWithLogin function with this:
