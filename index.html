@@ -679,9 +679,9 @@ a{color:#0a66c2;text-decoration:underline}
 <!-- PIN overlay -->
 <div id="pinOverlay" aria-hidden="false">
   <div id="pinBox">
-    <input id="usernameInput" placeholder="Enter username" autocomplete="off" />
-    <input id="pinInput" placeholder="Enter PIN" type="password" autocomplete="current-password" />
-     <input id="verificationCodeInput" placeholder="Verification code (new users only)" 
+    <input id="usernameInput" placeholder="Create or Enter Username" autocomplete="off" />
+    <input id="pinInput" placeholder="Create or Enter Password" type="password" autocomplete="current-password" />
+     <input id="verificationCodeInput" placeholder="12 digit verify code (new users ONLY)" 
            autocomplete="one-time-code" />
           <div id="verificationCodeLink">
       <a href="https://plane65k.github.io/chatify-code/" target="_blank" 
@@ -2056,7 +2056,7 @@ usernameInput.addEventListener('input', async (e) => {
     if (!existingUsers) {
       // User doesn't exist, show verification field
       verificationCodeInput.style.display = 'block';
-      verificationCodeInput.placeholder = 'Verification code required for new users';
+      verificationCodeInput.placeholder = '12 digit verify code (new users ONLY)';
       isNewUser = true;
     } else {
       // User exists, hide verification field
