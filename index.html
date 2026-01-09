@@ -359,18 +359,25 @@ header{
   padding:18px;
   align-items:center;
   justify-content:center;
-  flex-shrink: 0;
-}
-.loader{
-  border:6px solid var(--secondary-background);
-  border-top:6px solid var(--button-background);
-  border-radius:50%;
-  width:36px;
-  height:36px;
-  animation:spin 1s linear infinite
+  flex-shrink:0;
 }
 
-@keyframes spin{to{transform:rotate(360deg)}}
+.loader{
+  width:36px;
+  height:36px;
+  background-image:url("https://res.cloudinary.com/dceqg5cky/image/upload/v1767927041/176792680500277049_fny3u3.png");
+  background-size:contain;
+  background-repeat:no-repeat;
+  background-position:center;
+  animation:spin 3s linear infinite;
+}
+
+@keyframes spin{
+  to{
+    transform:rotate(360deg);
+  }
+}
+
 
 #chat{
   flex:1;
@@ -384,7 +391,7 @@ header{
 .message{
   max-width:72%;
   padding:12px 14px;
-  border-radius:14px;
+  border-radius:20px;
   font-size:14px;
   position:relative;
   word-break:break-word;
@@ -634,7 +641,7 @@ a{color:#0a66c2;text-decoration:underline}
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.2s;
-    font-size: 14px;
+    font-size: 15px;
 }
 
 .message:hover .emoji-picker-btn {
@@ -647,7 +654,7 @@ a{color:#0a66c2;text-decoration:underline}
     right: 0;
     background: var(--card-background);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 40px;
     padding: 8px;
     display: none;
     z-index: 10;
@@ -679,9 +686,9 @@ a{color:#0a66c2;text-decoration:underline}
 <!-- PIN overlay -->
 <div id="pinOverlay" aria-hidden="false">
   <div id="pinBox">
-    <input id="usernameInput" placeholder="Create or Enter Username" autocomplete="off" />
-    <input id="pinInput" placeholder="Create or Enter Password" type="password" autocomplete="current-password" />
-     <input id="verificationCodeInput" placeholder="12 digit verify code (new users ONLY)" 
+    <input id="usernameInput" placeholder="Enter username" autocomplete="off" />
+    <input id="pinInput" placeholder="Enter PIN" type="password" autocomplete="current-password" />
+     <input id="verificationCodeInput" placeholder="Verification code (new users only)" 
            autocomplete="one-time-code" />
           <div id="verificationCodeLink">
       <a href="https://plane65k.github.io/chatify-code/" target="_blank" 
@@ -2056,7 +2063,7 @@ usernameInput.addEventListener('input', async (e) => {
     if (!existingUsers) {
       // User doesn't exist, show verification field
       verificationCodeInput.style.display = 'block';
-      verificationCodeInput.placeholder = '12 digit verify code (new users ONLY)';
+      verificationCodeInput.placeholder = 'Verification code required for new users';
       isNewUser = true;
     } else {
       // User exists, hide verification field
