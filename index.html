@@ -339,7 +339,10 @@ html,body{
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: transparent !important; /* Allows body gradient to be seen */
+  background: transparent !important;
+  /* Add these to ensure scrolling works */
+  height: calc(100vh - 140px); /* Adjust based on header/footer height */
+  overflow-y: auto;
 }
 header {
   display: flex;
@@ -356,6 +359,9 @@ header {
   z-index: 10;
   width: 95%;
   max-width: 1200px;
+  transition: width 0.25s ease, max-width 0.1s ease;
+  width: 95%; /* You can adjust this percentage */
+  max-width: 1200px; /* You can adjust this too */
   
   
   /* Remove ALL margins */
@@ -372,6 +378,43 @@ header {
 /* No ::before pseudo-element = margin shows body gradient */
 
 /* This pseudo-element creates the "transparent rectangle" effect */
+header.scrolled {
+  transition: width 0.3s ease, max-width 0.3s ease;
+  width: 50%; /* Adjust this value (70% is the example) */
+  max-width: 150px; 
+  height: 50px;/* Adjust this value too */
+  
+  
+}
+
+
+header.scrolled .header-actions {
+
+  display: none !important;
+}
+
+header.scrolled #serverPanel {
+  display: none !important;
+}
+
+
+
+
+body {
+  overflow: hidden;
+}
+.main {
+  overflow-y: auto;
+  height: 100vh;
+}
+
+
+
+
+
+
+
+
 
 
 .header-actions{
@@ -1645,6 +1688,162 @@ el.querySelectorAll('.reaction').forEach(reaction => {
   chatDiv.scrollTop = chatDiv.scrollHeight;
 }
 
+
+
+
+
+
+
+
+
+
+
+/* ==== Header Scroll Effect - Top Always Expanded ==== */
+const header = document.querySelector('header');
+const chat = document.getElementById('chat');
+
+let lastScrollTop = 0;
+let isScrolling = false;
+let hasScrolled = false;
+
+function handleHeaderScroll() {
+    const scrollTop = chat.scrollTop;
+
+    // 🔒 ABSOLUTE RULE: if at top, header stays expanded
+    if (scrollTop <= 0) {
+        header.classList.remove('scrolled');
+        lastScrollTop = 0;
+        hasScrolled = false;
+        return;
+    }
+
+    if (!hasScrolled) {
+        hasScrolled = true;
+        lastScrollTop = scrollTop;
+        return;
+    }
+
+    if (isScrolling) return;
+    isScrolling = true;
+
+    // scrolling up (but not at top)
+    if (scrollTop > 50 && scrollTop < lastScrollTop) {
+        header.classList.add('scrolled');
+    } 
+    // scrolling down
+    else {
+        header.classList.remove('scrolled');
+    }
+
+    lastScrollTop = scrollTop;
+
+    setTimeout(() => {
+        isScrolling = false;
+    }, 100);
+}
+
+// Attach scroll listener
+if (chat) {
+    chat.addEventListener('scroll', handleHeaderScroll);
+}
+
+// FORCE expanded header on load
+window.addEventListener('load', () => {
+    header.classList.remove('scrolled');
+    lastScrollTop = 0;
+    hasScrolled = false;
+});
+
+
+
+
+
+
+
+let isManuallyCondensed = false;
+
+header.addEventListener('click', (e) => {
+    // Don't toggle if clicking on interactive elements
+    if (e.target.closest('button') || 
+        e.target.closest('select') ||
+        e.target.closest('img')) {
+        return;
+    }
+    
+    isManuallyCondensed = !isManuallyCondensed;
+    
+    // Save state
+    
+    
+    // Force the state
+    if (isManuallyCondensed) {
+        header.classList.add('scrolled');
+    } else {
+        header.classList.remove('scrolled');
+    }
+});
+
+window.addEventListener('load', () => {
+    const manualState = localStorage.getItem('headerManualState');
+    if (manualState === 'true') {
+        isManuallyCondensed = true;
+        header.classList.add('scrolled');
+    }
+});
+
+
+
+
+/* ==== Simpler Hover-to-Expand Only ==== */
+
+let isHovering = false;
+let hoverTimeout = null;
+
+// Hover to expand
+header.addEventListener('mouseenter', () => {
+    if (header.classList.contains('scrolled')) {
+        clearTimeout(hoverTimeout);
+        hoverTimeout = setTimeout(() => {
+            isHovering = true;
+            header.classList.remove('scrolled');
+        }, 100);
+    }
+});
+
+// Leave to collapse (with delay)
+header.addEventListener('mouseleave', () => {
+    clearTimeout(hoverTimeout);
+    
+    if (isHovering) {
+        hoverTimeout = setTimeout(() => {
+            isHovering = false;
+            header.classList.add('scrolled');
+        }, 300);
+    }
+});
+
+// Keep all existing scroll functionality
+// (your existing scroll code stays exactly the same)
+
+// Optional: Add visual cue
+header.style.cursor = 'pointer';
+header.title = 'Hover to expand, click to use buttons';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ==== Supabase Functions ==== */
 function initializeSupabase() {
   try {
@@ -2094,7 +2293,6 @@ pinBtn.addEventListener('click', async () => {
     alert('Login failed: ' + error.message);
   }
 });
-
 
 
 
