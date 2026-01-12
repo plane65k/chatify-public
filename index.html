@@ -1730,63 +1730,77 @@ el.querySelectorAll('.reaction').forEach(reaction => {
 
 
 
+/* Replace the existing scroll handling code with this: */
 
-
-/* ==== Header Scroll Effect - Top Always Expanded ==== */
 const header = document.querySelector('header');
 const chat = document.getElementById('chat');
 
 let lastScrollTop = 0;
 let isScrolling = false;
-let hasScrolled = false;
+let lastDirection = 'none';
+let bottomThreshold = 50; // pixels from bottom to trigger expand
 
 function handleHeaderScroll() {
     const scrollTop = chat.scrollTop;
-
-    // 🔒 ABSOLUTE RULE: if at top, header stays expanded
-    if (scrollTop <= 0) {
+    const scrollHeight = chat.scrollHeight;
+    const clientHeight = chat.clientHeight;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    
+    // Check if we're at or near the bottom
+    const isAtBottom = distanceFromBottom <= bottomThreshold;
+    
+    // Determine scroll direction
+    const direction = scrollTop > lastScrollTop ? 'down' : 'up';
+    
+    // If at the bottom, always expand
+    if (isAtBottom) {
+        header.classList.remove('scrolled');
+        lastDirection = direction;
+        lastScrollTop = scrollTop;
+        return;
+    }
+    
+    
+     if (scrollTop <= 0) {
         header.classList.remove('scrolled');
         lastScrollTop = 0;
         hasScrolled = false;
         return;
     }
-
-    if (!hasScrolled) {
-        hasScrolled = true;
-        lastScrollTop = scrollTop;
-        return;
-    }
-
-    if (isScrolling) return;
-    isScrolling = true;
-
-    // scrolling up (but not at top)
-    if (scrollTop > 50 && scrollTop < lastScrollTop) {
+   
+    
+    
+    // If scrolling down (and not at bottom), collapse
+    if (direction === 'down' && !isAtBottom) {
         header.classList.add('scrolled');
-    } 
-    // scrolling down
-    else {
-        header.classList.remove('scrolled');
     }
-
+    // If scrolling up (and not at bottom), expand
+    else if (direction === 'up' && !isAtBottom) {
+        header.classList.add('scrolled');
+    }
+    
+    lastDirection = direction;
     lastScrollTop = scrollTop;
-
-    setTimeout(() => {
-        isScrolling = false;
-    }, 100);
 }
 
-// Attach scroll listener
-if (chat) {
-    chat.addEventListener('scroll', handleHeaderScroll);
-}
+// Throttle scroll events for better performance
+let scrollTimeout;
+chat.addEventListener('scroll', () => {
+    if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+    }
+    
+    scrollTimeout = setTimeout(() => {
+        handleHeaderScroll();
+    }, 50); // Adjust throttle time as needed (50ms is smooth)
+});
 
-// FORCE expanded header on load
+// Initial state - expanded
 window.addEventListener('load', () => {
     header.classList.remove('scrolled');
     lastScrollTop = 0;
-    hasScrolled = false;
 });
+
 
 
 
@@ -3172,6 +3186,5 @@ unbanBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
-
 
 
