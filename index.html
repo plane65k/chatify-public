@@ -1982,44 +1982,139 @@ async function subscribeToBans() {
 
 
 
+// Add these state variables at the top
+let hasMoreMessages = true;
+let isLoadingMessages = false;
+let messagePage = 0;
+const MESSAGES_PER_PAGE = 50;
+let oldestMessageDate = null; // Track oldest message date for pagination
 
+// NEW: Render function that preserves scroll position
+function renderMessagesPreserveScroll() {
+  let oldScrollHeight = chatDiv.scrollHeight;
+  let oldScrollTop = chatDiv.scrollTop;
+  
+  chatDiv.innerHTML = '';
+  displayed.clear();
+  messages.forEach(m => renderOneMessage(m, false));
+  
+  // Keep scroll position exactly where it was
+  chatDiv.scrollTop = oldScrollTop + (chatDiv.scrollHeight - oldScrollHeight);
+}
 
-async function fetchRecent(){
+// NEW: Render function that scrolls to bottom (for reset)
+function renderMessagesScrollToBottom() {
+  chatDiv.innerHTML = '';
+  displayed.clear();
+  messages.forEach(m => renderOneMessage(m, false));
+  chatDiv.scrollTop = chatDiv.scrollHeight;
+}
+
+// Replace your fetchRecent with this:
+async function fetchRecent(reset = true) {
+  if (isLoadingMessages) return;
+  isLoadingMessages = true;
+  
   loadingDiv.style.display = 'flex';
+  
   try {
-    let r = await supabase
+    if (reset) {
+      messagePage = 0;
+      hasMoreMessages = true;
+      messages = [];
+      displayed.clear();
+      oldestMessageDate = null;
+    }
+    
+    if (!hasMoreMessages) {
+      loadingDiv.style.display = 'none';
+      isLoadingMessages = false;
+      return;
+    }
+    
+    let query = supabase
       .from(TABLE)
       .select('*')
       .eq('server_id', currentServer)
-      .order('created_at', {ascending: true})
-      .limit(300);
+      .order('created_at', { ascending: false }) // Get newest FIRST
+      .limit(MESSAGES_PER_PAGE);
     
+    // If loading more, get messages OLDER than our oldest message
+    if (!reset && oldestMessageDate) {
+      query = query.lt('created_at', oldestMessageDate);
+    }
+    
+    let r = await query;
     if (r.error) throw r.error;
     
-    messages = r.data.map(m => ({
-      id: m.id,
-      username: m.username || 'anon',
-      message: m.content || m.message || m.text || '',
-      timestamp: m.created_at ? new Date(m.created_at).toLocaleString('en-US', { 
-    month: '2-digit', 
-    day: '2-digit', 
-    year: 'numeric', 
-    hour: 'numeric', 
-    minute: '2-digit',
-    hour12: true 
-}) : '',
-      deleted: m.deleted || false,
-      replies: m.replies || null,
-      server_id: m.server_id || 'public'
-    }));
-
-    clearChatAndRenderAll();
+    if (r.data.length > 0) {
+      // Update oldest message date for next batch
+      oldestMessageDate = r.data[r.data.length - 1].created_at;
+      
+      const newMessages = r.data.map(m => ({
+        id: m.id,
+        username: m.username || 'anon',
+        message: m.content || m.message || m.text || '',
+        timestamp: m.created_at ? new Date(m.created_at).toLocaleString('en-US', { 
+          month: '2-digit', 
+          day: '2-digit', 
+          year: 'numeric', 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        }) : '',
+        deleted: m.deleted || false,
+        replies: m.replies || null,
+        server_id: m.server_id || 'public'
+      }));
+      
+      if (reset) {
+        // For reset: reverse so oldest is at top, newest at bottom
+        messages = newMessages.reverse();
+        renderMessagesScrollToBottom();
+      } else {
+        // For load more: new messages are OLDER, add to the BEGINNING (top)
+        messages = [...newMessages.reverse(), ...messages];
+        renderMessagesPreserveScroll();
+      }
+    } else {
+      hasMoreMessages = false;
+    }
+    
   } catch (e) {
     console.error('Fetch error:', e);
   } finally {
     loadingDiv.style.display = 'none';
+    isLoadingMessages = false;
   }
 }
+
+// Scroll listener - loads more when near TOP
+chatDiv.addEventListener('scroll', function() {
+  if (chatDiv.scrollTop < 100 && // Near top
+      !isLoadingMessages && 
+      hasMoreMessages) {
+    fetchRecent(false); // Load older messages
+  }
+});
+
+// Server change listener
+document.getElementById('serverSelect').addEventListener('change', (e) => {
+  currentServer = e.target.value;
+  fetchRecent(true);
+});
+
+
+
+
+
+
+
+
+
+
+
+
 
 async function subscribeRealtime() {
   if (realtimeSubscription) {
