@@ -2011,6 +2011,8 @@ function renderMessagesScrollToBottom() {
 }
 
 // Replace your fetchRecent with this:
+// Replace your fetchRecent with this:
+
 async function fetchRecent(reset = true) {
   if (isLoadingMessages) return;
   isLoadingMessages = true;
@@ -2021,7 +2023,7 @@ async function fetchRecent(reset = true) {
     if (reset) {
       messagePage = 0;
       hasMoreMessages = true;
-      messages = [];
+      messages = []; // ⭐ CLEAR MESSAGES FIRST
       displayed.clear();
       oldestMessageDate = null;
     }
@@ -2035,11 +2037,10 @@ async function fetchRecent(reset = true) {
     let query = supabase
       .from(TABLE)
       .select('*')
-      .eq('server_id', currentServer)
-      .order('created_at', { ascending: false }) // Get newest FIRST
+      .eq('server_id', currentServer) // ⭐ ONLY get messages for current server
+      .order('created_at', { ascending: false })
       .limit(MESSAGES_PER_PAGE);
     
-    // If loading more, get messages OLDER than our oldest message
     if (!reset && oldestMessageDate) {
       query = query.lt('created_at', oldestMessageDate);
     }
@@ -2048,7 +2049,6 @@ async function fetchRecent(reset = true) {
     if (r.error) throw r.error;
     
     if (r.data.length > 0) {
-      // Update oldest message date for next batch
       oldestMessageDate = r.data[r.data.length - 1].created_at;
       
       const newMessages = r.data.map(m => ({
@@ -2069,16 +2069,20 @@ async function fetchRecent(reset = true) {
       }));
       
       if (reset) {
-        // For reset: reverse so oldest is at top, newest at bottom
         messages = newMessages.reverse();
         renderMessagesScrollToBottom();
       } else {
-        // For load more: new messages are OLDER, add to the BEGINNING (top)
         messages = [...newMessages.reverse(), ...messages];
         renderMessagesPreserveScroll();
       }
     } else {
       hasMoreMessages = false;
+      // ⭐ If no messages and this is a reset, ensure chat is empty
+      if (reset) {
+        messages = [];
+        displayed.clear();
+        chatDiv.innerHTML = '';
+      }
     }
     
   } catch (e) {
@@ -2088,6 +2092,23 @@ async function fetchRecent(reset = true) {
     isLoadingMessages = false;
   }
 }
+
+// ⭐ ALSO update your server change listener to force a clean reset:
+
+document.getElementById('serverSelect').addEventListener('change', (e) => {
+  currentServer = e.target.value;
+  
+  // ⭐ Force clear everything immediately
+  messages = [];
+  displayed.clear();
+  chatDiv.innerHTML = '';
+  hasMoreMessages = true;
+  oldestMessageDate = null;
+  messagePage = 0;
+  
+  // Then fetch new server messages
+  fetchRecent(true);
+});
 
 // Scroll listener - loads more when near TOP
 chatDiv.addEventListener('scroll', function() {
