@@ -1226,7 +1226,16 @@ function saveLocalState(){ localStorage.setItem('chatMessages', JSON.stringify(m
 
 /* ==== Utilities ==== */
 function makeId(){ return Date.now() + "-" + Math.random().toString(36).slice(2,9); }
-function formatTS(ts){ return ts || new Date().toLocaleTimeString(); }
+function formatTS(ts){ 
+    return ts || new Date().toLocaleString('en-US', { 
+        month: 'short',
+        day: 'numeric', 
+        year: 'numeric', 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+    }); 
+}
 function escapeHtml(s){ if(!s) return ''; return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 
 /* ==== Supabase Column Detection Logic ==== */
@@ -1991,7 +2000,14 @@ async function fetchRecent(){
       id: m.id,
       username: m.username || 'anon',
       message: m.content || m.message || m.text || '',
-      timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
+      timestamp: m.created_at ? new Date(m.created_at).toLocaleString('en-US', { 
+    month: '2-digit', 
+    day: '2-digit', 
+    year: 'numeric', 
+    hour: 'numeric', 
+    minute: '2-digit',
+    hour12: true 
+}) : '',
       deleted: m.deleted || false,
       replies: m.replies || null,
       server_id: m.server_id || 'public'
@@ -2025,7 +2041,14 @@ async function subscribeRealtime() {
             id: m.id,
             username: m.username || 'anon',
             message: m.content || m.message || m.text || '',
-            timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
+            timestamp: m.created_at ? new Date(m.created_at).toLocaleString('en-US', { 
+     month: '2-digit', 
+    day: '2-digit', 
+    year: 'numeric', 
+    hour: 'numeric', 
+    minute: '2-digit',
+    hour12: true 
+}) : '',
             deleted: m.deleted || false,
             replies: m.replies || null,
             server_id: m.server_id || 'public'
@@ -2043,7 +2066,14 @@ async function subscribeRealtime() {
             id: m.id,
             username: m.username || 'anon',
             message: m.content || m.message || m.text || '',
-            timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
+            timestamp: m.created_at ? new Date(m.created_at).toLocaleString('en-US', { 
+     month: '2-digit', 
+    day: '2-digit', 
+    year: 'numeric', 
+    hour: 'numeric', 
+    minute: '2-digit',
+    hour12: true 
+}) : '',
             deleted: m.deleted || false,
             replies: m.replies || null,
             server_id: m.server_id || 'public'
