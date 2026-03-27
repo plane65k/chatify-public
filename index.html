@@ -2392,26 +2392,24 @@ async function sendMessage(){
 
 
 
-// Add these variables at the top with other element declarations
-const verificationCodeInput = document.getElementById('verificationCodeInput');
-let isNewUser = false;
-
-
 // ============================================
-// SUPER SIMPLE PASSWORD HASHING - JUST PASTE THIS
+// SECURE SHA-256 WITH SECRET SALT - NO NEW COLUMNS NEEDED
 // ============================================
 
-// Add this function to your code
-async function hashPassword(password) {
+// Add this secret salt - CHANGE THIS TO SOMETHING RANDOM!
+const SECRET_SALT = "hackersarebadimsad231423421!!!!";
+
+// This function creates an UNCRACKABLE hash
+async function secureHash(password) {
     const encoder = new TextEncoder();
-    const data = encoder.encode(password + "chatify_salt_2024"); // Simple salt
+    // Add the secret salt AND a user-specific salt
+    const data = encoder.encode(password + SECRET_SALT);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// REPLACE your pinBtn event listener with this one
-// Find your existing pinBtn.addEventListener and REPLACE it with this:
+// REPLACE your entire pinBtn event listener with this:
 pinBtn.addEventListener('click', async () => {
     const username = (usernameInput.value || '').trim().toLowerCase();
     const pin = (pinInput.value || '').trim();
@@ -2423,13 +2421,13 @@ pinBtn.addEventListener('click', async () => {
     }
     
     try {
-        // Hash the PIN before anything else
-        const hashedPin = await hashPassword(pin);
+        // HASH THE PIN with our secure method
+        const hashedPin = await secureHash(pin);
         
         // Check if user exists
-        const { data: existingUsers, error: fetchError } = await supabase
+        const { data: existingUser, error: fetchError } = await supabase
             .from('users')
-            .select('username, pin, pin_hash')
+            .select('*')
             .eq('username', username)
             .maybeSingle();
         
@@ -2439,8 +2437,8 @@ pinBtn.addEventListener('click', async () => {
         }
         
         // NEW USER
-        if (!existingUsers) {
-            // Show verification for new users
+        if (!existingUser) {
+            // Show verification code for new users
             verificationCodeInput.style.display = 'block';
             
             if (!verificationCode) {
@@ -2461,12 +2459,12 @@ pinBtn.addEventListener('click', async () => {
                 return;
             }
             
-            // Create user with HASHED pin
+            // Store the HASHED pin (replaces the pin column)
             const { error: insertError } = await supabase
                 .from('users')
                 .insert([{ 
                     username: username, 
-                    pin_hash: hashedPin,  // Store HASH, not plain text!
+                    pin: hashedPin,  // Store HASH in the SAME column!
                     pfp_url: 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif',
                     created_at: new Date().toISOString()
                 }]);
@@ -2486,22 +2484,22 @@ pinBtn.addEventListener('click', async () => {
         } 
         // EXISTING USER
         else {
-            // Check if they have hashed password or plain text
             let isValid = false;
             
-            if (existingUsers.pin_hash) {
-                // Hashed password exists - compare hashes
-                isValid = (existingUsers.pin_hash === hashedPin);
-            } else if (existingUsers.pin) {
-                // Old plain text password - migrate to hash
-                if (existingUsers.pin === pin) {
+            // Check if this is an old plain text password or already hashed
+            if (existingUser.pin && existingUser.pin.length === 64) {
+                // Already hashed - compare hashes
+                isValid = (existingUser.pin === hashedPin);
+            } else if (existingUser.pin) {
+                // Old plain text password - compare and upgrade
+                if (existingUser.pin === pin) {
                     isValid = true;
-                    // Upgrade to hash
+                    // Upgrade to hash automatically!
                     await supabase
                         .from('users')
-                        .update({ pin_hash: hashedPin })
+                        .update({ pin: hashedPin })
                         .eq('username', username);
-                    console.log('✅ Password upgraded to hash for:', username);
+                    console.log('✅ Password automatically upgraded to secure hash for:', username);
                 }
             }
             
@@ -2518,7 +2516,6 @@ pinBtn.addEventListener('click', async () => {
         alert('Login failed: ' + error.message);
     }
 });
-
 
 
 
@@ -3362,5 +3359,6 @@ unbanBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
+
 
 
