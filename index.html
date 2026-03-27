@@ -1238,6 +1238,25 @@ function formatTS(ts){
 }
 function escapeHtml(s){ if(!s) return ''; return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ==== Supabase Column Detection Logic ==== */
 async function tryInsertColumn(colName, row) {
   try {
@@ -1272,6 +1291,14 @@ async function insertWithColumn(col, username, text) {
     return { ok:false, error:e };
   }
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -2369,125 +2396,128 @@ async function sendMessage(){
 const verificationCodeInput = document.getElementById('verificationCodeInput');
 let isNewUser = false;
 
-// Modify the pinBtn event listener:
-pinBtn.addEventListener('click', async () => {
-  const username = (usernameInput.value || '').trim().toLowerCase();
-  const pin = (pinInput.value || '').trim();
-  const verificationCode = (verificationCodeInput.value || '').trim();
-  
-  if(!username || !pin) {
-    alert('Please enter both username and PIN');
-    return;
-  }
-  
-  // Show verification code field for new users only
-  if (!isNewUser) {
-    verificationCodeInput.style.display = 'none';
-  }
-  
-  // Initialize Supabase...
-  // ... (keep existing initialization code)
-  
-  try {
-    // First, try to get existing user
-    const { data: existingUsers, error: fetchError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('username', username);
-    
-    if (fetchError) {
-      console.error('Error checking user:', fetchError);
-      
-      if (fetchError.message.includes('Could not find the table')) {
-        if (username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN) {
-          proceedWithLogin(username, true);
-          return;
-        } else {
-          alert('System not fully initialized. Please contact administrator.');
-          return;
-        }
-      }
-      alert('Database error: ' + fetchError.message);
-      return;
-    }
-    
-    // NEW USER FLOW
-    if (!existingUsers || existingUsers.length === 0) {
-      // Show verification code input for new users
-      verificationCodeInput.style.display = 'block';
-      verificationCodeInput.focus();
-      isNewUser = true;
-      
-      // If user hasn't entered verification code yet, ask for it
-      if (!verificationCode) {
-        alert('New users require a verification code. Please enter one.');
-        return;
-      }
-      
-      // Verify the code against Supabase codes table
-      const { data: validCodes, error: codeError } = await supabase
-        .from('codes')
-        .select('*')
-        .eq('code', verificationCode)
-        .eq('used', false)
-        .single();
-      
-      if (codeError || !validCodes) {
-        alert('Invalid or already used verification code.');
-        return;
-      }
-      
-      // Mark the code as used
-      const { error: updateError } = await supabase
-        .from('codes')
-        .update({ 
-          used: true, 
-          used_by: username,
-          used_at: new Date().toISOString() 
-        })
-        .eq('code', verificationCode);
-      
-      if (updateError) {
-        alert('Failed to verify code: ' + updateError.message);
-        return;
-      }
-      
-      // Create new user
-      const { error: insertError } = await supabase
-        .from('users')
-        .insert([{ 
-          username: username, 
-          pin: pin,
-          pfp_url: 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif',
-          verification_code_used: verificationCode
-        }]);
-      
-      if (insertError) {
-        console.error('Error creating user:', insertError);
-        alert('Error creating user: ' + insertError.message);
-        return;
-      }
-      
-      console.log('New user created:', username);
-      proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
-      
-    } else {
-      // EXISTING USER FLOW (no verification code needed)
-      const user = existingUsers[0];
-      if (user.pin !== pin) {
-        alert('Wrong PIN');
-        return;
-      }
-      console.log('Existing user logged in:', username);
-      proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
-    }
-    
-  } catch (error) {
-    console.error('Unexpected error:', error);
-    alert('Login failed: ' + error.message);
-  }
-});
 
+// ============================================
+// SUPER SIMPLE PASSWORD HASHING - JUST PASTE THIS
+// ============================================
+
+// Add this function to your code
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + "chatify_salt_2024"); // Simple salt
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// REPLACE your pinBtn event listener with this one
+// Find your existing pinBtn.addEventListener and REPLACE it with this:
+pinBtn.addEventListener('click', async () => {
+    const username = (usernameInput.value || '').trim().toLowerCase();
+    const pin = (pinInput.value || '').trim();
+    const verificationCode = (verificationCodeInput.value || '').trim();
+    
+    if(!username || !pin) {
+        alert('Please enter both username and PIN');
+        return;
+    }
+    
+    try {
+        // Hash the PIN before anything else
+        const hashedPin = await hashPassword(pin);
+        
+        // Check if user exists
+        const { data: existingUsers, error: fetchError } = await supabase
+            .from('users')
+            .select('username, pin, pin_hash')
+            .eq('username', username)
+            .maybeSingle();
+        
+        if (fetchError && !fetchError.message.includes('no rows')) {
+            alert('Database error: ' + fetchError.message);
+            return;
+        }
+        
+        // NEW USER
+        if (!existingUsers) {
+            // Show verification for new users
+            verificationCodeInput.style.display = 'block';
+            
+            if (!verificationCode) {
+                alert('New users require a verification code');
+                return;
+            }
+            
+            // Verify code
+            const { data: validCodes, error: codeError } = await supabase
+                .from('codes')
+                .select('*')
+                .eq('code', verificationCode)
+                .eq('used', false)
+                .single();
+            
+            if (codeError || !validCodes) {
+                alert('Invalid verification code');
+                return;
+            }
+            
+            // Create user with HASHED pin
+            const { error: insertError } = await supabase
+                .from('users')
+                .insert([{ 
+                    username: username, 
+                    pin_hash: hashedPin,  // Store HASH, not plain text!
+                    pfp_url: 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif',
+                    created_at: new Date().toISOString()
+                }]);
+            
+            if (insertError) {
+                alert('Error creating user: ' + insertError.message);
+                return;
+            }
+            
+            // Mark code as used
+            await supabase
+                .from('codes')
+                .update({ used: true, used_by: username })
+                .eq('code', verificationCode);
+            
+            proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
+        } 
+        // EXISTING USER
+        else {
+            // Check if they have hashed password or plain text
+            let isValid = false;
+            
+            if (existingUsers.pin_hash) {
+                // Hashed password exists - compare hashes
+                isValid = (existingUsers.pin_hash === hashedPin);
+            } else if (existingUsers.pin) {
+                // Old plain text password - migrate to hash
+                if (existingUsers.pin === pin) {
+                    isValid = true;
+                    // Upgrade to hash
+                    await supabase
+                        .from('users')
+                        .update({ pin_hash: hashedPin })
+                        .eq('username', username);
+                    console.log('✅ Password upgraded to hash for:', username);
+                }
+            }
+            
+            if (!isValid) {
+                alert('Wrong PIN');
+                return;
+            }
+            
+            proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
+        }
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        alert('Login failed: ' + error.message);
+    }
+});
 
 
 
