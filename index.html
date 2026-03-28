@@ -2397,19 +2397,12 @@ async function sendMessage(){
 // ============================================
 
 // Add this secret salt - CHANGE THIS TO SOMETHING RANDOM!
-const SECRET_SALT = "hackersarebadimsad231423421!!!!";
 
-// This function creates an UNCRACKABLE hash
-async function secureHash(password) {
-    const encoder = new TextEncoder();
-    // Add the secret salt AND a user-specific salt
-    const data = encoder.encode(password + SECRET_SALT);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 // REPLACE your entire pinBtn event listener with this:
+// ============================================
+
+// ============================================
 pinBtn.addEventListener('click', async () => {
     const username = (usernameInput.value || '').trim().toLowerCase();
     const pin = (pinInput.value || '').trim();
@@ -2421,93 +2414,61 @@ pinBtn.addEventListener('click', async () => {
     }
     
     try {
-        // HASH THE PIN with our secure method
-        const hashedPin = await secureHash(pin);
+        // Call Edge Function for login
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/verify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'login',
+                username: username,
+                password: pin
+            })
+        });
         
-        // Check if user exists
-        const { data: existingUser, error: fetchError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('username', username)
-            .maybeSingle();
+        const result = await response.json();
         
-        if (fetchError && !fetchError.message.includes('no rows')) {
-            alert('Database error: ' + fetchError.message);
-            return;
-        }
-        
-        // NEW USER
-        if (!existingUser) {
-            // Show verification code for new users
+        if (response.status === 404) {
+            // User doesn't exist - show registration
             verificationCodeInput.style.display = 'block';
             
             if (!verificationCode) {
-                alert('New users require a verification code');
+                alert('New user! Please enter verification code');
                 return;
             }
             
-            // Verify code
-            const { data: validCodes, error: codeError } = await supabase
-                .from('codes')
-                .select('*')
-                .eq('code', verificationCode)
-                .eq('used', false)
-                .single();
+            // Register new user
+            const registerResponse = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    action: 'register',
+                    username: username,
+                    password: pin,
+                    verificationCode: verificationCode
+                })
+            });
             
-            if (codeError || !validCodes) {
-                alert('Invalid verification code');
+            const registerResult = await registerResponse.json();
+            
+            if (!registerResponse.ok) {
+                alert(registerResult.error || 'Registration failed');
                 return;
             }
             
-            // Store the HASHED pin (replaces the pin column)
-            const { error: insertError } = await supabase
-                .from('users')
-                .insert([{ 
-                    username: username, 
-                    pin: hashedPin,  // Store HASH in the SAME column!
-                    pfp_url: 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif',
-                    created_at: new Date().toISOString()
-                }]);
-            
-            if (insertError) {
-                alert('Error creating user: ' + insertError.message);
-                return;
-            }
-            
-            // Mark code as used
-            await supabase
-                .from('codes')
-                .update({ used: true, used_by: username })
-                .eq('code', verificationCode);
-            
-            proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
-        } 
-        // EXISTING USER
-        else {
-            let isValid = false;
-            
-            // Check if this is an old plain text password or already hashed
-            if (existingUser.pin && existingUser.pin.length === 64) {
-                // Already hashed - compare hashes
-                isValid = (existingUser.pin === hashedPin);
-            } else if (existingUser.pin) {
-                // Old plain text password - compare and upgrade
-                if (existingUser.pin === pin) {
-                    isValid = true;
-                    // Upgrade to hash automatically!
-                    await supabase
-                        .from('users')
-                        .update({ pin: hashedPin })
-                        .eq('username', username);
-                    console.log('✅ Password automatically upgraded to secure hash for:', username);
-                }
-            }
-            
-            if (!isValid) {
-                alert('Wrong PIN');
-                return;
-            }
-            
+            alert('Account created! Please login again.');
+            return;
+        }
+        
+        if (!response.ok) {
+            alert(result.error || 'Login failed');
+            return;
+        }
+        
+        if (result.success) {
             proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
         }
         
@@ -2516,8 +2477,6 @@ pinBtn.addEventListener('click', async () => {
         alert('Login failed: ' + error.message);
     }
 });
-
-
 
 
 
@@ -3359,6 +3318,7 @@ unbanBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
+
 
 
 
