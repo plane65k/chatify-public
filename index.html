@@ -910,6 +910,7 @@ We may update these terms periodically. Continued use of the app after changes m
 <div class="header-actions">
   <button id="profileBtn" class="button-clear" title="Set profile picture">Profile</button>
   <button id="toggleThemeBtn" class="button-clear" title="Toggle theme">Toggle Theme</button>
+  <button id="palBtn" class="button-clear" title="PAL">PAL</button>
   <button id="documentationBtn" class="button-clear" title="View Documentation">Documentation</button>
   <button id="adminBtn" class="admin-panel-btn" style="display:none">Admin</button>
   <button id="signoutBtn" class="button-clear" title="Sign out" style="color:salmon">Sign out</button>
@@ -1145,6 +1146,7 @@ const adminModal = document.getElementById('adminModal');
 const notifyBanner = document.getElementById('notifyBanner');
 const newMessageSound = document.getElementById('newMessageSound');
 const toggleThemeBtn = document.getElementById('toggleThemeBtn');
+const palBtn = document.getElementById('palBtn');
 const signoutBtn = document.getElementById('signoutBtn');
 const profileBtn = document.getElementById('profileBtn');
 const profileModal = document.getElementById('profileModal');
@@ -1246,7 +1248,10 @@ function escapeHtml(s){ if(!s) return ''; return String(s).replaceAll('&','&amp;
 
 
 
-
+document.getElementById('palBtn').addEventListener('click', () => {
+    window.open('https://my-pal.pages.dev/');
+   
+});
 
 
 
