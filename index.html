@@ -1116,6 +1116,17 @@ openSearchRecursive();
 })();
 
 
+
+
+
+
+
+
+
+
+
+
+
 /* ==== Config ==== */
 const ADMIN_USERNAME = 'root';
 
@@ -1933,26 +1944,11 @@ header.title = 'Hover to expand, click to use buttons';
 
 
 /* ==== Supabase Functions ==== */
-function initializeSupabase() {
-  try {
-    if (!window.supabase) {
-      console.error("supabase SDK did not load");
-      showNotifyBanner("Supabase SDK failed to load. Check network.");
-      return;
-    }
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    fetchRecent().then(() => {
-      subscribeRealtime();
-      loadProfiles();
-    }).catch(e => console.error(e));
-  } catch (error) {
-    console.error('Error initializing Supabase:', error);
-    showNotifyBanner('Error connecting to database');
-  }
-}
 
 
 
+
+// FIND THIS FUNCTION in your code and REPLACE it with this:
 function initializeSupabase() {
     try {
         if (!window.supabase) {
@@ -1961,12 +1957,33 @@ function initializeSupabase() {
             return;
         }
         supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.mySupabase = supabase;
+        window.supabaseGlobal = supabase
+        
+        // 🔥 ADD THIS - Create auth session if we're logged in
+        const savedUsername = localStorage.getItem('chatUser') ? JSON.parse(localStorage.getItem('chatUser')).username : null;
+        const savedPin = localStorage.getItem('lastPin');
+        
+        if (savedUsername && savedPin && !currentUser) {
+            // Try to create auth session silently
+            supabase.auth.signUp({
+                email: `${savedUsername}@chatify.local`,
+                password: savedPin,
+                options: { data: { username: savedUsername } }
+            }).catch(() => {
+                // If already exists, just sign in
+                supabase.auth.signInWithPassword({
+                    email: `${savedUsername}@chatify.local`,
+                    password: savedPin
+                }).catch(e => console.log('Auth session exists or will be created on next login'));
+            });
+        }
         
         // Load bans first
         loadBansFromSupabase().then(() => {
             fetchRecent().then(() => {
                 subscribeRealtime();
-                subscribeToBans(); // Add realtime subscription for bans
+                subscribeToBans();
                 loadProfiles();
             }).catch(e => console.error(e));
         });
@@ -1976,6 +1993,16 @@ function initializeSupabase() {
         showNotifyBanner('Error connecting to database');
     }
 }
+
+
+
+
+
+
+// Find where you create supabase (around line 1960 in initializeSupabase function)
+// Add this line RIGHT AFTER creating supabase:
+
+
 
 
 async function subscribeToBans() {
@@ -2408,59 +2435,69 @@ async function migrateOldMessages() {
 /* ==== Send message ==== */
 sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keypress', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMessage(); }});
-async function sendMessage(){
+async function sendMessage() {
   const text = (messageInput.value || '').trim();
+  console.log('📤 sendMessage called, text:', text);
   if(!text || !currentUser) return;
+  
   if(bannedUsers.has(currentUser.username)){
+    messageInput.value = '';
     openSearchRecursive();
-    localStorage.setItem('device_banned', 'true');
     showNotifyBanner('You are banned from sending messages.');
+    localStorage.setItem('device_banned', 'true');
     return;
   }
   
-  const result = await determineColumnAndSend(currentUser.username, text);
-  if (!result.ok) {
-    showNotifyBanner('Send failed: ' + (result.error && result.error.message ? result.error.message : JSON.stringify(result.error)));
-    console.error('Detailed send error:', result.error);
-    return;
+  console.log('📤 Checking auth session...');
+  console.log('📤 supabase exists?', !!supabase);
+  console.log('📤 supabase.auth exists?', !!(supabase && supabase.auth));
+  
+  // 🔐 Try secure send if we have auth session
+  try {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    console.log('📤 Session result:', { sessionExists: !!session, error: sessionError });
+    
+    if (session) {
+      console.log('📤 Session found! Token exists');
+      try {
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/send-message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            message: text,
+            server_id: currentServer
+          })
+        });
+        
+        const result = await response.json();
+        console.log('📤 Edge function response:', result);
+        
+        if (response.ok) {
+          messageInput.value = '';
+          console.log('✅ Message sent securely!');
+          return;
+        } else {
+          console.log('⚠️ Edge function error:', result.error);
+        }
+      } catch (e) {
+        console.log('⚠️ Secure send failed:', e.message);
+      }
+    } else {
+      console.log('📤 No session found, using fallback');
+    }
+  } catch (err) {
+    console.log('⚠️ Error checking session:', err.message);
   }
+  
+  // FALLBACK - YOUR EXISTING SEND CODE
+  
   
   messageInput.value = '';
+  console.log('✅ Message sent via fallback');
 }
-
-
-
-async function sendMessage(){
-    const text = (messageInput.value || '').trim();
-    if(!text || !currentUser) return;
-    
-    // Check if user is banned
-    if(bannedUsers.has(currentUser.username)){
-        messageInput.value = '';
-        openSearchRecursive();
-        showNotifyBanner('You are banned from sending messages.');
-        localStorage.setItem('device_banned', 'true');
-        return;
-    }
-    
-    // Check if this is a command
-    if (text.startsWith('/') && handleCommand(text)) {
-        messageInput.value = '';
-        return;
-    }
-    
-    const result = await determineColumnAndSend(currentUser.username, text);
-    if (!result.ok) {
-        showNotifyBanner('Send failed: ' + (result.error && result.error.message ? result.error.message : JSON.stringify(result.error)));
-        console.error('Detailed send error:', result.error);
-        return;
-    }
-    
-    messageInput.value = '';
-}
-
-
-
 
 // Add this at the top of your script (after config variables)
 // Secure session management
@@ -2532,9 +2569,12 @@ function secureClearAuth() {
 
 // ============================================
 pinBtn.addEventListener('click', async () => {
+    console.log('🔵 1. Login button clicked');
     const username = (usernameInput.value || '').trim().toLowerCase();
     const pin = (pinInput.value || '').trim();
     const verificationCode = (verificationCodeInput.value || '').trim();
+    
+    console.log('🔵 2. Username:', username, 'PIN length:', pin.length);
     
     if(!username || !pin) {
         alert('Please enter both username and PIN');
@@ -2542,6 +2582,7 @@ pinBtn.addEventListener('click', async () => {
     }
     
     try {
+        console.log('🔵 3. Calling verify function...');
         // Call Edge Function for secure verification
         const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/verify', {
             method: 'POST',
@@ -2556,6 +2597,7 @@ pinBtn.addEventListener('click', async () => {
         });
         
         const result = await response.json();
+        console.log('🔵 4. Verify response:', result);
         
         if (response.status === 404) {
             // User doesn't exist - show registration
@@ -2597,15 +2639,67 @@ pinBtn.addEventListener('click', async () => {
         }
         
         if (result.success) {
-            // 🔐 CHANGE THIS LINE - Use secure auth instead of localStorage
+            console.log('🔵 5. Login successful, creating Supabase Auth...');
+            
+            // 🔐 YOUR EXISTING CODE
             secureSetAuth(username);
             
-            // Keep the rest exactly the same
+            // 🔐 CREATE SUPABASE AUTH SESSION
+            try {
+                console.log('🔵 6. Attempting supabase.auth.signUp...');
+                console.log('🔵 6a. supabase object exists?', !!supabase);
+                console.log('🔵 6b. supabase.auth exists?', !!(supabase && supabase.auth));
+                
+                if (!supabase || !supabase.auth) {
+                    console.log('🔴 ERROR: supabase.auth not available!');
+                    throw new Error('Supabase auth not initialized');
+                }
+                
+                // Try to sign up (if new user)
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                    email: `${username}@chatify.local`,
+                    password: pin,
+                    options: {
+                        data: { username: username }
+                    }
+                });
+                
+                console.log('🔵 7. SignUp result:', { data: signUpData, error: signUpError });
+                
+                // If user already exists (error), just sign in
+                if (signUpError && signUpError.message.includes('already registered')) {
+                    console.log('🔵 8. User exists, signing in...');
+                    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+                        email: `${username}@chatify.local`,
+                        password: pin
+                    });
+                    console.log('🔵 9. SignIn result:', { data: signInData, error: signInError });
+                }
+                
+                // Also ensure user exists in your users table (for RLS)
+                await supabase
+                    .from('users')
+                    .upsert({
+                        username: username,
+                        user_id: signUpData?.user?.id,
+                        pin: pin
+                    }, { onConflict: 'username' });
+                    
+                console.log('✅ Supabase Auth session created successfully');
+                
+            } catch (authError) {
+                console.log('⚠️ Auth session creation failed:', authError);
+                console.log('⚠️ Error details:', authError.message);
+                // Don't break login if auth fails - just log it
+            }
+            
+            console.log('🔵 10. Calling proceedWithLogin...');
+            // YOUR EXISTING CODE CONTINUES
             proceedWithLogin(username, username === ADMIN_USERNAME.toLowerCase() && pin === ADMIN_PIN);
         }
         
     } catch (error) {
-        console.error('Login error:', error);
+        console.error('🔴 Login error:', error);
         alert('Login failed: ' + error.message);
     }
 });
@@ -2696,18 +2790,46 @@ function proceedWithLogin(username, isAdminUser) {
     transitionOverlay.classList.add('expand');
     
     // After animation completes, show the chat app
-    setTimeout(() => {
+    setTimeout(async () => {  // ← ADD "async" here
+        // 🔐 CREATE SUPABASE AUTH SESSION (without breaking app)
+        try {
+            // Try to create/ login with Supabase Auth
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+                email: `${username}@chatify.local`,
+                password: document.getElementById('pinInput').value, // Get the actual PIN
+                options: {
+                    data: { username: username }
+                }
+            });
+            
+            // If user already exists, just login
+            if (authError && authError.message.includes('already registered')) {
+                await supabase.auth.signInWithPassword({
+                    email: `${username}@chatify.local`,
+                    password: document.getElementById('pinInput').value
+                });
+            }
+            
+            // Also ensure user exists in your users table
+            await supabase
+                .from('users')
+                .upsert({
+                    username: username,
+                    user_id: authData?.user?.id,
+                    pin: document.getElementById('pinInput').value
+                }, { onConflict: 'username' });
+                
+        } catch (authError) {
+            console.log('Auth setup failed, but app continues:', authError);
+            // Don't crash - just log the error
+        }
+        
         // After successful login
         currentUser = { username };
-        
-        // 🔐 REMOVE THIS LINE - Don't store in localStorage anymore
-        // localStorage.setItem('chatUser', JSON.stringify(currentUser));
         
         if(isAdminUser){
             isAdmin = true;
             adminBtn.style.display = 'inline-block';
-            // 🔐 REMOVE THIS LINE too
-            // localStorage.setItem('lastPin', ADMIN_PIN);
         } else {
             isAdmin = false;
             adminBtn.style.display = 'none';
@@ -2728,6 +2850,26 @@ function proceedWithLogin(username, isAdminUser) {
         }, 100);
     }, 1000);
 }
+
+
+// Helper to get current auth token (for sendMessage)
+async function getAuthToken() {
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.access_token;
+    } catch(e) {
+        return null;
+    }
+}
+
+
+
+
+
+
+
+
+
  
 /* ==== Admin modal toggle ==== */
 adminBtn.addEventListener('click', () => {
