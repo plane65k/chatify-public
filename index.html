@@ -1461,9 +1461,10 @@ async function subscribeRealtime() {
       console.log('Realtime already subscribed.');
       return;
     }
+    
     realtimeSubscription = supabase.channel('public:'+TABLE)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: TABLE }, (payload) => {
-        console.log('Realtime INSERT:', payload.new);
+        console.log('✅ Realtime INSERT:', payload.new);
         const m = payload.new;
         const text = m.content || m.message || m.text || '';
         const newMessage = {
@@ -1472,18 +1473,22 @@ async function subscribeRealtime() {
           message: text,
           timestamp: m.timestamp || (m.created_at ? new Date(m.created_at).toLocaleTimeString() : ''),
           deleted: m.deleted || false,
-          replies: m.replies || null // Add this
+          replies: m.replies || null,
+          server_id: m.server_id || 'public'
         };
         
-        const idx = messages.findIndex(msg => msg.id === newMessage.id);
-        if (idx === -1) {
-          messages.push(newMessage);
-          saveLocalState();
-          renderOneMessage(newMessage, true);
+        // Only add if message belongs to current server
+        if (newMessage.server_id === currentServer) {
+          const idx = messages.findIndex(msg => msg.id === newMessage.id);
+          if (idx === -1) {
+            messages.push(newMessage);
+            saveLocalState();
+            renderOneMessage(newMessage, true);
+          }
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: TABLE }, (payload) => {
-        console.log('Realtime UPDATE:', payload.new); // Add this log
+        console.log('🔄 Realtime UPDATE:', payload.new);
         const m = payload.new;
         const text = m.content || m.message || m.text || '';
         const updatedMessage = {
@@ -1492,29 +1497,62 @@ async function subscribeRealtime() {
           message: text,
           timestamp: m.timestamp || (m.created_at ? new Date(m.created_at).toLocaleTimeString() : ''),
           deleted: m.deleted || false,
-          replies: m.replies || null // Add this
+          replies: m.replies || null,
+          server_id: m.server_id || 'public'
         };
         
-        const idx = messages.findIndex(msg => msg.id === updatedMessage.id);
-        if (idx !== -1) {
-          messages[idx] = updatedMessage;
-          saveLocalState();
-          clearChatAndRenderAll(); // This will update all messages
+        // Only update if message belongs to current server
+        if (updatedMessage.server_id === currentServer) {
+          const idx = messages.findIndex(msg => msg.id === updatedMessage.id);
+          if (idx !== -1) {
+            messages[idx] = updatedMessage;
+            saveLocalState();
+            clearChatAndRenderAll();
+          }
         }
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: TABLE }, (payload) => {
-         const deletedId = payload.old.id;
+  console.log('🗑️ Realtime DELETE received:', payload);
+  const deletedId = payload.old.id;
   
-  // ❌ Remove this line: messages[idx].deleted = true;
-  // ✅ Replace with actual removal:
+  console.log(`🗑️ Removing message ${deletedId} from UI`);
+  
+  // Force remove from all local data structures
+  const wasPresent = messages.some(msg => msg.id === deletedId);
+  
+  // Filter out the deleted message
   messages = messages.filter(msg => msg.id !== deletedId);
+  
+  // Remove from displayed set
+  if (displayed.has(deletedId)) {
+    displayed.delete(deletedId);
+  }
+  
+  // Save to localStorage
   saveLocalState();
-  clearChatAndRenderAll(); 
-      })
+  
+  if (wasPresent) {
+    console.log(`✅ Message ${deletedId} removed from local state`);
+    
+    // Find and remove the DOM element directly (faster than re-rendering all)
+    const messageElement = document.querySelector(`.message[data-id="${deletedId}"]`);
+    if (messageElement) {
+      messageElement.remove();
+      console.log(`✅ Removed message DOM element for ${deletedId}`);
+    } else {
+      // Fallback to full re-render if element not found
+      clearChatAndRenderAll();
+    }
+  } else {
+    console.log(`⚠️ Message ${deletedId} not found in local state, but still re-rendering`);
+    clearChatAndRenderAll();
+  }
+})
       .subscribe();
-    console.log('Realtime subscription created');
+      
+    console.log('✅ Realtime subscription created');
   } catch (e) {
-    console.error('Realtime subscribe error:', e);
+    console.error('❌ Realtime subscribe error:', e);
     showNotifyBanner('Realtime subscribe error: ' + (e.message||e));
   }
 }
@@ -1717,18 +1755,15 @@ el.querySelectorAll('.reaction').forEach(reaction => {
     const opt = document.createElement('div'); opt.className = 'options'; opt.textContent = '⋮';
     const menu = document.createElement('div'); menu.className = 'options-menu';
     const delBtn = document.createElement('button'); delBtn.textContent = 'Delete';
-    delBtn.onclick = () => {
-      //const idx = messages.findIndex(m=>m.id===msg.id);
-      //if(idx>=0){ messages[idx].deleted = true; saveLocalState(); }
-      //deleteMessage(msg.id);
-      //menu.style.display='none';
-      //clearChatAndRenderAll();
-       messages = messages.filter(m => m.id !== msg.id);
-  saveLocalState();
-  deleteMessage(msg.id);
-  menu.style.display='none';
-  clearChatAndRenderAll(); // This will now completely remove it
-    };
+   delBtn.onclick = async (e) => {
+  e.stopPropagation();
+  
+  // Show confirmation
+  
+  
+  // Call delete and refresh
+  await deleteMessage(msg.id);
+};
     menu.appendChild(delBtn);
     if(isAdmin){
       const editBtn = document.createElement('button'); editBtn.textContent = 'Edit timestamp';
@@ -2278,34 +2313,74 @@ async function subscribeRealtime() {
 
 async function deleteMessage(id) {
   try {
-    const { error } = await supabase
+    console.log('🗑️ Attempting to delete message:', id);
+    
+    // First, check if the message exists and get its details
+    const { data: messageData, error: fetchError } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (fetchError) {
+      console.error('❌ Error fetching message:', fetchError);
+      showNotifyBanner('Message not found: ' + fetchError.message);
+      return false;
+    }
+    
+    console.log('📝 Message to delete:', messageData);
+    console.log('📝 Message username:', messageData.username);
+    console.log('📝 Current user:', currentUser?.username);
+    console.log('📝 Is admin:', isAdmin);
+    
+    // Try to delete
+    const { data, error } = await supabase
       .from(TABLE)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select();
     
     if (error) {
-      console.error('Delete error:', error);
-      showNotifyBanner('Delete failed: ' + error.message);
+      console.error('❌ Delete error details:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error details:', error.details);
+      showNotifyBanner(`Delete failed: ${error.message}`);
+      return false;
     }
-  } catch (e) {
-    console.error('Delete exception:', e);
-    showNotifyBanner('Delete exception: ' + e.message);
-  }
-}
-
-async function updateMessageTimestamp(id, newTimestamp) {
-  try {
-    const { error } = await supabase
+    
+    console.log('✅ Delete response:', data);
+    
+    if (data && data.length === 0) {
+      console.warn('⚠️ No rows were deleted. RLS might be blocking!');
+      showNotifyBanner('Message not deleted. RLS policy might be blocking.');
+      return false;
+    }
+    
+    // Verify deletion
+    const { data: verifyData, error: verifyError } = await supabase
       .from(TABLE)
-      .update({ timestamp: newTimestamp })
-      .eq('id', id);
-    if (error) {
-      console.error('Update timestamp error:', error);
-      showNotifyBanner('Update timestamp error: ' + error.message);
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (verifyData) {
+      console.error('❌ Message STILL exists after delete!', verifyData);
+      showNotifyBanner('Message still exists after delete - RLS issue!');
+      return false;
+    } else {
+      console.log('✅ Verified: Message is gone from database');
     }
+    
+    // Refresh messages
+    await fetchRecent(true);
+    showNotifyBanner('Message deleted successfully');
+    return true;
+    
   } catch (e) {
-    console.error('Update timestamp exception:', e);
-    showNotifyBanner('Update timestamp exception: ' + e.message);
+    console.error('❌ Delete exception:', e);
+    showNotifyBanner('Delete error: ' + e.message);
+    return false;
   }
 }
 
