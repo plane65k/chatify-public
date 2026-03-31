@@ -140,6 +140,13 @@ footer,
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
   }
+  
+  
+  
+  
+  
+  
+  
 </style>
 </head>
 <body>
@@ -220,6 +227,7 @@ footer,
   --message-other-background: #e0e0e0;
   --message-other-text: #000000;
   --overlay-background: rgba(0,0,0,0.4);
+  
   --transition-time: 2s;
 }
 [data-theme="dark"] {
@@ -261,12 +269,272 @@ html,body{
   background:var(--overlay-background);
   z-index:100;
 }
-#pinBox{
-  background:var(--card-background);
-  padding:30px;
-  border-radius:16px;
-  width:320px;
-  box-shadow:0 8px 30px var(--shadow-color)
+#pinOverlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-background)
+  z-index: 100;
+}
+
+#pinBox {
+  background: var(--card-background);
+  padding: 30px;
+  border-radius: 28px;
+  width: 90%;
+  max-width: 480px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+}
+
+/* Allow nested divs inside pinBox without breaking */
+#pinBox > div {
+  margin-bottom: 15px;
+}
+
+#pinBox input {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  width: 100%;
+  margin-bottom: 10px;
+  background: var(--secondary-background);
+  color: var(--text-color);
+  box-sizing: border-box;
+}
+
+#pinBox button {
+  background: var(--button-background);
+  color: var(--button-text);
+  padding: 12px;
+  border-radius: 12px;
+  border: 0;
+  width: 100%;
+  cursor: pointer;
+  font-weight: 700;
+}
+/* Add header using pseudo-element - no extra divs needed */
+
+
+#pinBox::before {
+  content: "Chatify";
+  display: block;
+  text-align: center;
+  font-size: 40px;
+  font-weight: bold;
+  color: var(--text-color);
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 0px solid var(--button-background);
+}
+
+/* Left Panel */
+.pin-left {
+  flex: 1;
+  background: linear-gradient(135deg, var(--button-background) 0%, #2e7d32 100%);
+  padding: 40px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: white;
+}
+
+.pin-left h2 {
+  font-size: 2rem;
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+
+.pin-left p {
+  font-size: 1rem;
+  opacity: 0.9;
+  margin-bottom: 32px;
+  line-height: 1.5;
+}
+
+.pin-features {
+  margin-top: 20px;
+}
+
+.pin-feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.pin-feature span:first-child {
+  font-size: 20px;
+}
+
+.pin-feature span:last-child {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+/* Right Panel */
+.pin-right {
+  flex: 1;
+  padding: 40px 32px;
+  overflow-y: auto;
+  background: var(--card-background);
+  max-height: 80vh;
+}
+
+.pin-right h3 {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+  color: var(--text-color);
+}
+
+.pin-subtitle {
+  color: var(--text-color);
+  opacity: 0.6;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.input-field {
+  margin-bottom: 16px;
+}
+
+.input-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.input-field input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  background: var(--secondary-background);
+  color: var(--text-color);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.input-field input:focus {
+  outline: none;
+  border-color: var(--button-background);
+}
+
+.pin-requirements {
+  background: var(--secondary-background);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-left: 3px solid var(--button-background);
+}
+
+.pin-requirements p {
+  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-color);
+}
+
+.pin-requirements ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.pin-requirements li {
+  font-size: 11px;
+  color: var(--text-color);
+  opacity: 0.7;
+  margin: 4px 0;
+}
+
+.pin-terms {
+  background: var(--secondary-background);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  max-height: 100px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-color);
+  opacity: 0.8;
+}
+
+.pin-terms strong {
+  color: var(--button-background);
+}
+
+#pinBtn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 40px;
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 8px;
+  background: var(--button-background);
+  color: var(--button-text);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+#pinBtn:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.verification-link {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.verification-link a {
+  font-size: 11px;
+  color: var(--button-background);
+  text-decoration: none;
+}
+
+/* Make sure verification code group is visible */
+#verificationCodeGroup {
+  display: none;
+}
+
+#verificationCodeInput {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  background: var(--secondary-background);
+  color: var(--text-color);
+  font-size: 14px;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+  #pinBox {
+    flex-direction: column;
+    width: 95%;
+    max-height: 90vh;
+  }
+  
+  .pin-left {
+    padding: 24px;
+  }
+  
+  .pin-left h2 {
+    font-size: 1.5rem;
+  }
+  
+  .pin-right {
+    padding: 24px;
+    max-height: 60vh;
+  }
 }
 #pinBox input{
   padding:12px;
@@ -838,7 +1106,7 @@ a{color:#0a66c2;text-decoration:underline}
 <div id="pinOverlay" aria-hidden="false">
   <div id="pinBox">
     <input id="usernameInput" placeholder="Enter username" autocomplete="off" />
-    <input id="pinInput" placeholder="Enter PIN" type="password" autocomplete="current-password" />
+    <input id="pinInput" placeholder="Enter PIN (MUST BE MORE 6 DIGITS)" type="password" autocomplete="current-password" />
      <input id="verificationCodeInput" placeholder="Verification code (new users only)" 
            autocomplete="one-time-code" />
           <div id="verificationCodeLink">
@@ -3694,6 +3962,10 @@ unbanBtn.addEventListener('click', async () => {
         showNotifyBanner('Unban error: ' + error.message);
     }
 });
+
+
+
+
 
 
 
