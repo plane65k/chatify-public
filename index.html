@@ -1674,16 +1674,23 @@ const content = msg.message && msg.message.match(/^https?:\/\/.*\.(jpg|jpeg|png|
   `;
   
   // Add emoji reactions section
-const reactions = msg.replies ? JSON.parse(msg.replies) : {};
-const reactionButtons = Object.entries(reactions).map(([emoji, users]) => 
-    `<span class="reaction" data-emoji="${emoji}" data-message="${msg.id}" title="${users.join(', ')}">
-        ${emoji} ${users.length}
-    </span>`
-).join('');
+// Parse reactions safely
+let reactions = {};
+try {
+    if (msg.replies) {
+        reactions = typeof msg.replies === 'string' ? JSON.parse(msg.replies) : msg.replies;
+    }
+} catch(e) { reactions = {}; }
 
-const reactionsHtml = reactions && Object.keys(reactions).length > 0 ? 
-    `<div class="reactions">${reactionButtons}</div>` : '';
+// Build reaction buttons
+let reactionButtonsHtml = '';
+for (let emoji in reactions) {
+    if (reactions[emoji] && reactions[emoji].length > 0) {
+        reactionButtonsHtml += `<span class="reaction" data-emoji="${emoji}" data-message="${msg.id}" title="${reactions[emoji].join(', ')}">${emoji} ${reactions[emoji].length}</span>`;
+    }
+}
 
+const reactionsHtml = reactionButtonsHtml ? `<div class="reactions" style="display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap;">${reactionButtonsHtml}</div>` : '';
 // Add emoji picker button
 const emojiPicker = `<div class="emoji-picker-btn" data-message="${msg.id}">😀</div>`;
 
@@ -2158,6 +2165,7 @@ async function fetchRecent(reset = true) {
         }) : '',
         deleted: m.deleted || false,
         replies: m.replies || null,
+        
         server_id: m.server_id || 'public'
       }));
       
@@ -3127,69 +3135,97 @@ async function addReaction(messageId, emoji) {
     if (!currentUser) return;
     
     try {
-        // Get current message
-        const message = messages.find(m => m.id === messageId);
-        if (!message) return;
+        // Find the message
+        const messageIndex = messages.findIndex(m => m.id === messageId);
+        if (messageIndex === -1) return;
         
-        // Parse existing reactions or create empty object
-        const currentReactions = message.replies ? JSON.parse(message.replies) : {};
+        const message = messages[messageIndex];
         
-        // Initialize emoji array if it doesn't exist
+        // Parse existing reactions
+        let currentReactions = {};
+        if (message.replies) {
+            try {
+                currentReactions = typeof message.replies === 'string' ? JSON.parse(message.replies) : message.replies;
+            } catch(e) {
+                currentReactions = {};
+            }
+        }
+        
+        // Toggle reaction (same logic as before)
         if (!currentReactions[emoji]) {
             currentReactions[emoji] = [];
         }
         
-        // Check if user already reacted with this emoji
         const userIndex = currentReactions[emoji].indexOf(currentUser.username);
-        
         if (userIndex > -1) {
-            // Remove reaction if user already reacted
             currentReactions[emoji].splice(userIndex, 1);
-            // Remove emoji key if no reactions left
             if (currentReactions[emoji].length === 0) {
                 delete currentReactions[emoji];
             }
         } else {
-            // Add reaction
             currentReactions[emoji].push(currentUser.username);
         }
         
-        // Update message in local state
-        const messageIndex = messages.findIndex(m => m.id === messageId);
-        if (messageIndex > -1) {
-            messages[messageIndex].replies = JSON.stringify(currentReactions);
-            saveLocalState();
-        }
+        const updatedReplies = JSON.stringify(currentReactions);
         
-        // Update in Supabase - only update replies field
-        const updateData = { 
-            replies: JSON.stringify(currentReactions)
-        };
+        // ========== FIX: Use the SAME pattern as sendMessage ==========
+        // Instead of .update() which may be blocked by RLS, use .insert() pattern
+        // But since we need to UPDATE, we'll do a direct update with select to verify
         
-        const { error } = await supabase
+        console.log('Attempting to update message:', messageId);
+        
+        // Try the update with select to see what happens
+        const { data, error } = await supabase
             .from(TABLE)
-            .update(updateData)
-            .eq('id', messageId);
-            
+            .update({ replies: updatedReplies })
+            .eq('id', messageId)
+            .select();  // This returns the updated row
+        
         if (error) {
-            console.error('Error updating reactions:', error);
-            // Check if it's a column error
-            if (error.message && error.message.includes('column')) {
-                showNotifyBanner('Reactions not available yet');
-            } else {
-                showNotifyBanner('Failed to add reaction: ' + error.message);
+            console.error('Update failed with error:', error);
+            
+            // If update fails, try a different approach - fetch and then try again
+            if (error.message.includes('permission') || error.code === '42501') {
+                console.log('Permission denied, trying alternative method...');
+                
+                // Try using the same RPC function pattern if available
+                // Or show helpful message
+                showNotifyBanner('Cannot update reactions: RLS policy blocking. Admin needs to add UPDATE policy for replies column.');
+                return;
             }
+            
+            showNotifyBanner('Failed: ' + error.message);
             return;
         }
         
-        // Re-render the message to show updated reactions
-        clearChatAndRenderAll();
+        console.log('Update successful:', data);
+        
+        // Update local state
+        messages[messageIndex].replies = updatedReplies;
+        saveLocalState();
+        
+        // Re-render the specific message only
+        const messageElement = document.querySelector(`.message[data-id="${messageId}"]`);
+        if (messageElement) {
+            // Remove from displayed set to force re-render
+            displayed.delete(messageId);
+            // Re-render just this message
+            renderOneMessage(messages[messageIndex], false);
+            // Replace the old element with new one
+            const newElement = document.querySelector(`.message[data-id="${messageId}"]`);
+            if (newElement && messageElement !== newElement) {
+                messageElement.replaceWith(newElement);
+            }
+        } else {
+            clearChatAndRenderAll();
+        }
         
     } catch (error) {
-        console.error('Error in addReaction:', error);
-        showNotifyBanner('Error adding reaction: ' + error.message);
+        console.error('Reaction error:', error);
+        showNotifyBanner('Error: ' + error.message);
     }
 }
+
 /* ==== Documentation Elements ==== */
 const documentationBtn = document.getElementById('documentationBtn');
 const documentationModal = document.getElementById('documentationModal');
@@ -3665,6 +3701,5 @@ unbanBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
-
 
 
