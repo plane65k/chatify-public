@@ -1652,75 +1652,742 @@ async function createServer(name, members) {
 }
 
 // Update message fetching to include server filter
-async function fetchRecent(){
+async function fetchRecent(reset = true) {
+  if (isLoadingMessages) return;
+  isLoadingMessages = true;
+  
   loadingDiv.style.display = 'flex';
+  
   try {
-    let query = supabase.from(TABLE).select('*');
+    if (reset) {
+      messagePage = 0;
+      hasMoreMessages = true;
+      messages = [];
+      displayed.clear();
+      oldestMessageDate = null;
+      chatDiv.innerHTML = '';
+    }
     
-    // Only fetch messages for current server
-    // In fetchRecent function, change the public filter to:
-if (currentServer !== 'public') {
-  // For private servers, only get messages from that server
-  r = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('server_id', currentServer)
-    .order('created_at', {ascending: true})
-    .limit(300);
-} else {
-  // For public chat, ONLY get messages with server_id = 'public'
-  r = await supabase
-    .from(TABLE)
-    .select('*')
-    .eq('server_id', 'public')
-    .order('created_at', {ascending: true})
-    .limit(300);
-}
-    if (r.error) {
-      console.error('Fetch failed:', r.error);
-      showNotifyBanner('Fetch failed: ' + (r.error.message || JSON.stringify(r.error)));
+    if (!hasMoreMessages) {
+      loadingDiv.style.display = 'none';
+      isLoadingMessages = false;
       return;
     }
     
-    messages = r.data.map(m => {
-      const text = m.content || m.message || m.text || '';
-      return {
+    // ✅ FIX: Build query correctly
+    let query = supabase
+      .from(TABLE)
+      .select('*')
+      .eq('server_id', currentServer)
+      .order('created_at', { ascending: false })
+      .limit(MESSAGES_PER_PAGE);
+    
+    if (!reset && oldestMessageDate) {
+      query = query.lt('created_at', oldestMessageDate);
+    }
+    
+    // ✅ FIX: Execute query
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      oldestMessageDate = data[data.length - 1].created_at;
+      
+      const newMessages = data.map(m => ({
         id: m.id,
         username: m.username || 'anon',
-        message: text,
-        timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString() : '',
+        message: m.content || m.message || m.text || '',
+        timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
         deleted: m.deleted || false,
         replies: m.replies || null,
         server_id: m.server_id || 'public'
-      };
-    });
-
-    saveLocalState();
-    clearChatAndRenderAll();
+      }));
+      
+      if (reset) {
+        messages = newMessages.reverse();
+        renderMessagesScrollToBottom();
+      } else {
+        messages = [...newMessages.reverse(), ...messages];
+        renderMessagesPreserveScroll();
+      }
+    } else {
+      hasMoreMessages = false;
+      if (reset) {
+        messages = [];
+        displayed.clear();
+        chatDiv.innerHTML = '';
+      }
+    }
+    
   } catch (e) {
-    console.error('Fetch exception:', e);
-    showNotifyBanner('Fetch exception: ' + e.message);
+    console.error('Fetch error:', e);
   } finally {
     loadingDiv.style.display = 'none';
+    isLoadingMessages = false;
   }
 }
 
-// Update message sending to include server_id
-async function determineColumnAndSend(username, text) {
-  const row = { 
-    username, 
-    content: text, 
-    created_at: new Date().toISOString(),
-    server_id: currentServer
-  };
-  
-  const r = await supabase.from(TABLE).insert([row]).select();
-  
-  if (r.error) {
-    return { ok: false, error: r.error };
-  }
-  return { ok: true, data: r.data };
+
+
+
+// ADD THIS NEW FUNCTION - Auto-refresh private server messages like public server
+// REPLACE the autoRefreshPrivateMessages function with this
+let privateRefreshInterval = null;
+let isRefreshing = false;
+let privateHasMoreMessages = true;
+let privateOldestDate = null;
+let privateIsLoadingMore = false;
+const PRIVATE_MESSAGES_PER_PAGE = 200;
+
+async function autoRefreshPrivateMessages() {
+    if (currentServer === 'public') return;
+    if (!currentUser) return;
+    if (isRefreshing) return;
+    
+    isRefreshing = true;
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) {
+            isRefreshing = false;
+            return;
+        }
+        
+        // Fetch latest messages (newest first)
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({ 
+                server_id: currentServer, 
+                limit: PRIVATE_MESSAGES_PER_PAGE
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages) {
+            const newMessages = result.messages.map(m => ({
+                id: m.id,
+                username: m.username,
+                message: m.content,
+                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
+                deleted: m.deleted || false,
+                replies: m.replies || null,
+                server_id: m.server_id || currentServer,
+                created_at: m.created_at
+            })).reverse(); // Reverse to show oldest first
+            
+            // Check if new messages arrived
+            const hasNewMessages = newMessages.length !== messages.length ||
+                (newMessages.length > 0 && messages.length > 0 && 
+                 newMessages[newMessages.length - 1]?.id !== messages[messages.length - 1]?.id);
+            
+            if (hasNewMessages) {
+                const oldScrollHeight = chatDiv.scrollHeight;
+                const oldScrollTop = chatDiv.scrollTop;
+                const isAtBottom = chatDiv.scrollHeight - chatDiv.scrollTop - chatDiv.clientHeight < 50;
+                
+                messages = newMessages;
+                privateOldestDate = messages[0]?.created_at || null;
+                displayed.clear();
+                chatDiv.innerHTML = '';
+                messages.forEach(m => renderOneMessage(m, false));
+                
+                // Preserve scroll position unless at bottom
+                if (!isAtBottom && oldScrollHeight > 0) {
+                    const newScrollTop = oldScrollTop + (chatDiv.scrollHeight - oldScrollHeight);
+                    chatDiv.scrollTop = Math.max(0, newScrollTop);
+                } else if (isAtBottom) {
+                    chatDiv.scrollTop = chatDiv.scrollHeight;
+                }
+                
+                console.log(`✅ Refreshed ${messages.length} private messages`);
+            }
+        }
+    } catch (err) {
+        console.error('Auto-refresh error:', err);
+    } finally {
+        isRefreshing = false;
+    }
 }
+
+// ADD THIS NEW FUNCTION - Load older private messages (infinite scroll)
+// REPLACE the loadMorePrivateMessages function with this
+// REPLACE the entire loadMorePrivateMessages function
+// Replace loadMorePrivateMessages with this
+// Replace loadMorePrivateMessages with this
+// REPLACE loadMorePrivateMessages with this
+let isLoadingMore = false;
+let lastLoadTime = 0;
+
+async function loadMorePrivateMessages() {
+    if (currentServer === 'public') return;
+    if (!currentUser) return;
+    if (isLoadingMore) {
+        console.log('Already loading, skipping');
+        return;
+    }
+    if (messages.length === 0) return;
+    
+    // Prevent rapid successive calls
+    const now = Date.now();
+    if (now - lastLoadTime < 2000) {
+        console.log('Loading too fast, skipping');
+        return;
+    }
+    
+    const oldestMessage = messages[0];
+    if (!oldestMessage || !oldestMessage.created_at) {
+        return;
+    }
+    
+    isLoadingMore = true;
+    lastLoadTime = now;
+    loadingDiv.style.display = 'flex';
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) return;
+        
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                action: 'get',
+                server_id: currentServer,
+                limit: 50,
+                before_date: oldestMessage.created_at
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages && result.messages.length > 0) {
+            const olderMessages = result.messages.map(m => ({
+                id: m.id,
+                username: m.username,
+                message: m.content,
+                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
+                deleted: m.deleted || false,
+                replies: m.replies || null,
+                server_id: m.server_id || currentServer,
+                created_at: m.created_at
+            })).reverse();
+            
+            const oldScrollHeight = chatDiv.scrollHeight;
+            const oldScrollTop = chatDiv.scrollTop;
+            
+            messages = [...olderMessages, ...messages];
+            displayed.clear();
+            chatDiv.innerHTML = '';
+            messages.forEach(m => renderOneMessage(m, false));
+            
+            chatDiv.scrollTop = oldScrollTop + (chatDiv.scrollHeight - oldScrollHeight);
+            
+            console.log(`✅ Loaded ${olderMessages.length} more messages`);
+        }
+    } catch (err) {
+        console.error('Load more error:', err);
+    } finally {
+        loadingDiv.style.display = 'none';
+        isLoadingMore = false;
+    }
+}
+
+
+
+
+
+
+
+// ADD THIS NEW FUNCTION - For private server reactions
+// REPLACE addPrivateReaction with this
+// REPLACE addPrivateReaction with this
+// REPLACE addPrivateReaction with this
+// REPLACE addPrivateReaction
+async function addPrivateReaction(messageId, emoji) {
+    console.log('================== ADD REACTION DEBUG START ==================');
+    console.log('📌 Input messageId:', messageId);
+    console.log('📌 Input emoji:', emoji);
+    console.log('📌 currentUser:', currentUser?.username);
+    console.log('📌 currentServer:', currentServer);
+    console.log('📌 currentServer type:', typeof currentServer);
+    
+    if (!currentUser) {
+        console.log('❌ FAIL: No currentUser');
+        return;
+    }
+    if (currentServer === 'public') {
+        console.log('❌ FAIL: Server is public, should use public reaction function');
+        return;
+    }
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        console.log('📌 sessionToken exists:', !!sessionToken);
+        console.log('📌 sessionToken preview:', sessionToken ? sessionToken.substring(0, 30) + '...' : 'null');
+        
+        if (!sessionToken) {
+            console.log('❌ FAIL: No session token');
+            return;
+        }
+        
+        const requestBody = {
+            action: 'react',
+            server_id: currentServer,
+            message_id: messageId,
+            emoji: emoji
+        };
+        console.log('📌 Request body:', JSON.stringify(requestBody, null, 2));
+        
+        console.log('📡 Sending fetch request to edge function...');
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        console.log('📬 Response status:', response.status);
+        console.log('📬 Response status text:', response.statusText);
+        console.log('📬 Response ok?', response.ok);
+        
+        const result = await response.json();
+        console.log('📬 Response body:', JSON.stringify(result, null, 2));
+        
+        if (response.ok && result.success) {
+            console.log('✅ Reaction API call succeeded');
+            
+            if (result.message) {
+                console.log('📦 Received message object:', result.message);
+                console.log('   - id:', result.message.id);
+                console.log('   - content:', result.message.content);
+                console.log('   - replies:', result.message.replies);
+                console.log('   - username:', result.message.username);
+                
+                // Find the message in local array
+                const index = messages.findIndex(m => m.id === result.message.id);
+                console.log('🔍 Looking for message in local array at index:', index);
+                console.log('📊 Local messages count:', messages.length);
+                console.log('📊 Local message IDs:', messages.map(m => m.id).join(', '));
+                
+                if (index !== -1) {
+                    console.log('✅ Found message at index:', index);
+                    console.log('📦 Old message data:', messages[index]);
+                    
+                    // Update local message
+                    const updatedMessage = {
+                        id: result.message.id,
+                        username: result.message.username,
+                        message: result.message.content,
+                        timestamp: result.message.created_at ? new Date(result.message.created_at).toLocaleString() : '',
+                        deleted: result.message.deleted || false,
+                        replies: result.message.replies,
+                        server_id: result.message.server_id,
+                        created_at: result.message.created_at
+                    };
+                    
+                    messages[index] = updatedMessage;
+                    console.log('📦 Updated local message:', messages[index]);
+                    
+                    // Try to re-render the specific message
+                    const msgElement = document.querySelector(`.message[data-id="${messageId}"]`);
+                    console.log('🔍 DOM element found?', msgElement);
+                    console.log('🔍 displayed set before delete:', Array.from(displayed));
+                    
+                    if (msgElement) {
+                        console.log('✅ Found DOM element, removing from displayed set and re-rendering');
+                        displayed.delete(messageId);
+                        console.log('🔍 displayed set after delete:', Array.from(displayed));
+                        
+                        renderOneMessage(messages[index], false);
+                        console.log('✅ renderOneMessage called');
+                        
+                        const newElement = document.querySelector(`.message[data-id="${messageId}"]`);
+                        console.log('🔍 New DOM element found?', newElement);
+                        
+                        if (newElement && msgElement !== newElement) {
+                            console.log('🔄 Replacing old element with new element');
+                            msgElement.replaceWith(newElement);
+                        } else if (!newElement) {
+                            console.log('⚠️ New element not found, clearing and re-rendering all');
+                            clearChatAndRenderAll();
+                        }
+                    } else {
+                        console.log('⚠️ DOM element not found, clearing and re-rendering all');
+                        clearChatAndRenderAll();
+                    }
+                } else {
+                    console.log('❌ Message NOT found in local array!');
+                    console.log('   Looking for ID:', messageId);
+                    console.log('   Available IDs:', messages.map(m => m.id));
+                    console.log('🔄 Forcing full refresh...');
+                    await refreshPrivateMessagesAfterAction();
+                }
+            } else {
+                console.log('⚠️ No message object in response, forcing full refresh');
+                await refreshPrivateMessagesAfterAction();
+            }
+        } else {
+            console.log('❌ API call failed or returned error');
+            console.log('   Error:', result.error);
+        }
+    } catch (err) {
+        console.error('❌ CRITICAL ERROR in addPrivateReaction:', err);
+        console.error('   Error name:', err.name);
+        console.error('   Error message:', err.message);
+        console.error('   Error stack:', err.stack);
+    }
+    
+    console.log('================== ADD REACTION DEBUG END ==================');
+}
+
+
+
+
+
+
+
+
+
+
+// Update startPrivateAutoRefresh
+function startPrivateAutoRefresh() {
+    if (privateAutoRefreshInterval) {
+        clearInterval(privateAutoRefreshInterval);
+    }
+    
+    privateAutoRefreshInterval = setInterval(() => {
+        if (currentServer !== 'public' && currentUser) {
+            refreshPrivateMessagesAfterAction();
+            console.log('poop')
+        }
+    }, 500);
+}
+
+
+
+
+
+// ADD THIS NEW FUNCTION - Same refresh logic used by sendMessage
+// ADD THIS FUNCTION - Exact same logic as sendMessage uses
+async function refreshPrivateMessages() {
+    if (currentServer === 'public') return;
+    if (!currentUser) return;
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) return;
+        
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                action: 'get',
+                server_id: currentServer,
+                limit: 100
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages) {
+            const newMessages = result.messages.map(m => ({
+                id: m.id,
+                username: m.username,
+                message: m.content,
+                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
+                deleted: m.deleted || false,
+                replies: m.replies || null,
+                server_id: m.server_id || currentServer,
+                created_at: m.created_at
+            })).reverse();
+            
+            // Check if messages changed
+            if (JSON.stringify(messages.map(m => m.id)) !== JSON.stringify(newMessages.map(m => m.id))) {
+                const oldScrollHeight = chatDiv.scrollHeight;
+                const oldScrollTop = chatDiv.scrollTop;
+                const isAtBottom = chatDiv.scrollHeight - chatDiv.scrollTop - chatDiv.clientHeight < 50;
+                
+                messages = newMessages;
+                displayed.clear();
+                chatDiv.innerHTML = '';
+                messages.forEach(m => renderOneMessage(m, false));
+                
+                if (!isAtBottom && oldScrollHeight > 0) {
+                    chatDiv.scrollTop = oldScrollTop + (chatDiv.scrollHeight - oldScrollHeight);
+                } else if (isAtBottom) {
+                    chatDiv.scrollTop = chatDiv.scrollHeight;
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Refresh error:', err);
+    }
+}
+
+
+
+
+
+// ADD THIS NEW FUNCTION - Does NOT replace existing fetchRecent
+// REPLACE your get-messages call with this:
+// ADD THIS NEW FUNCTION - Does NOT replace your existing fetchRecent
+// Update fetchPrivateServerMessages
+// REPLACE fetchPrivateServerMessages
+async function fetchPrivateServerMessages(retryCount = 0) {
+    if (currentServer === 'public') return;
+    
+    const MAX_RETRIES = 2;
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) return;
+        
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                action: 'get',
+                server_id: currentServer,
+                limit: 100
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages) {
+            const newMessages = result.messages.map(m => ({
+                id: m.id,
+                username: m.username,
+                message: m.content,
+                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
+                deleted: m.deleted || false,
+                replies: m.replies || null,
+                server_id: m.server_id || currentServer,
+                created_at: m.created_at
+            })).reverse();
+            
+            messages = newMessages;
+            privateHasMoreMessages = messages.length >= 100;
+            privateOldestDate = messages[0]?.created_at || null;
+            
+            // USE EXACT SAME RENDERING AS PUBLIC SERVER
+            clearChatAndRenderAll();
+            console.log(`✅ Loaded ${messages.length} private messages`);
+            return true;
+        } else if (retryCount < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return fetchPrivateServerMessages(retryCount + 1);
+        }
+        return false;
+    } catch (err) {
+        if (retryCount < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return fetchPrivateServerMessages(retryCount + 1);
+        }
+        console.error('Private fetch error:', err);
+        return false;
+    }
+}
+
+
+
+
+
+// ADD THIS NEW FUNCTION - For refreshing private server messages
+async function refreshPrivateServerMessages() {
+    if (currentServer === 'public') return;
+    if (!currentUser) return;
+    
+    console.log('🔄 Refreshing private server messages for:', currentServer);
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) return;
+        
+        // Fetch latest messages from edge function
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({ 
+                server_id: currentServer, 
+                limit: MESSAGES_PER_PAGE || 500
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages) {
+            const newMessages = result.messages.map(m => ({
+                id: m.id,
+                username: m.username,
+                message: m.content,
+                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
+                deleted: m.deleted || false,
+                replies: m.replies || null,
+                server_id: m.server_id || currentServer
+            })).reverse();
+            
+            // Only update if messages changed
+            if (JSON.stringify(messages.map(m => m.id)) !== JSON.stringify(newMessages.map(m => m.id))) {
+                messages = newMessages;
+                clearChatAndRenderAll();
+                console.log(`✅ Refreshed ${messages.length} private messages`);
+            }
+        }
+    } catch (err) {
+        console.error('Refresh error:', err);
+    }
+}
+
+
+
+
+
+
+
+
+
+// Add this to refresh private messages every 30 seconds
+
+// Call startPrivateServerRefresh() after login
+// Call stopPrivateServerRefresh() on logout
+
+// ADD THIS - Auto-refresh every 500ms using same logic
+let privateAutoRefreshInterval = null;
+
+function startPrivateAutoRefresh() {
+    if (privateAutoRefreshInterval) {
+        clearInterval(privateAutoRefreshInterval);
+    }
+    
+    privateAutoRefreshInterval = setInterval(() => {
+        if (currentServer !== 'public' && currentUser) {
+            refreshPrivateMessages();
+        }
+    }, 500);
+}
+
+function stopPrivateAutoRefresh() {
+    if (privateAutoRefreshInterval) {
+        clearInterval(privateAutoRefreshInterval);
+        privateAutoRefreshInterval = null;
+    }
+}
+
+
+
+
+// Update message sending to include server_id
+
+
+
+
+// First, get the messages from the global app state
+function debugPrivateMessages() {
+    console.log('===== DEBUG PRIVATE MESSAGES =====');
+    
+    // Try to access messages from different possible locations
+    let msgs = null;
+    
+    // Try window.messages
+    if (window.messages) {
+        msgs = window.messages;
+        console.log('✅ Found messages on window');
+    }
+    // Try to get from the chat app state
+    else if (typeof messages !== 'undefined') {
+        msgs = messages;
+        console.log('✅ Found messages in scope');
+    }
+    else {
+        console.log('❌ messages not found in window or scope');
+        console.log('Trying to get from DOM...');
+        
+        // Extract from DOM as fallback
+        const messageElements = document.querySelectorAll('.message');
+        console.log(`Found ${messageElements.length} message elements in DOM`);
+        msgs = [];
+        messageElements.forEach(el => {
+            msgs.push({
+                id: el.dataset.id,
+                username: el.querySelector('strong')?.innerText,
+                hasReactions: !!el.querySelector('.reactions')
+            });
+        });
+    }
+    
+    if (msgs && msgs.length > 0) {
+        console.log(`Total messages: ${msgs.length}`);
+        console.log('Message IDs:');
+        msgs.forEach((msg, i) => {
+            console.log(`  [${i}] ID: ${msg.id}, Username: ${msg.username}, Has replies: ${!!msg.replies}`);
+        });
+        
+        // Test adding reaction to first message
+        if (msgs[0] && msgs[0].id) {
+            console.log(`\n🔧 To test reaction on message ${msgs[0].id}, copy and run:`);
+            console.log(`addPrivateReaction('${msgs[0].id}', '👍')`);
+        }
+    } else {
+        console.log('No messages found');
+    }
+}
+
+// Run the debug
+debugPrivateMessages();
+
+// Also check if currentUser exists
+console.log('currentUser:', window.currentUser || currentUser);
+console.log('currentServer:', window.currentServer || currentServer);
+
+// Add this to test private server messages
+async function debugPrivateServer() {
+  console.log('🔍 DEBUG: Current server:', currentServer);
+  console.log('🔍 DEBUG: Is private?', currentServer !== 'public');
+  
+  if (currentServer !== 'public') {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('server_id', currentServer)
+      .limit(10);
+    
+    if (error) {
+      console.error('❌ Error fetching:', error);
+    } else {
+      console.log(`✅ Found ${data.length} messages in private server:`);
+      data.forEach(msg => {
+        console.log(`  - ${msg.username}: ${msg.content?.substring(0, 50)}`);
+      });
+    }
+  }
+}
+
+// Run this in console to test: debugPrivateServer()
+
+
+
+
 
 // Update realtime subscription to filter by server
 async function subscribeRealtime() {
@@ -1833,38 +2500,28 @@ loadServers(); // Add this line
 loadLocalState();
 migrateOldMessages(); // ADD THIS LINE
 /* ==== Server Event Listeners ==== */
-document.getElementById('serverSelect').addEventListener('change', (e) => {
-  currentServer = e.target.value;
-  messages = [];
-  displayed.clear();
-  fetchRecent();
+// REPLACE your existing server change listener with this
+// REPLACE your existing serverSelect event listener with this
+// REPLACE your serverSelect event listener with this
+document.getElementById('serverSelect').addEventListener('change', async (e) => {
+    const newServer = e.target.value;
+    console.log('Switching to server:', newServer);
+    
+    currentServer = newServer;
+    
+    // Clear everything
+    messages = [];
+    displayed.clear();
+    chatDiv.innerHTML = '';
+    
+    if (newServer === 'public') {
+        stopPrivateAutoRefresh();
+        await fetchRecent(true);
+    } else {
+        await fetchPrivateServerMessages();
+        startPrivateAutoRefresh(); // Start 500ms auto-refresh
+    }
 });
-
-
-
-document.getElementById('createServerBtn').addEventListener('click', () => {
-  document.getElementById('serverModal').style.display = 'flex';
-});
-
-document.getElementById('cancelServerBtn').addEventListener('click', () => {
-  document.getElementById('serverModal').style.display = 'none';
-});
-
-document.getElementById('saveServerBtn').addEventListener('click', async () => {
-  const name = document.getElementById('serverNameInput').value.trim();
-  const members = document.getElementById('serverMembersInput').value.trim();
-  
-  if (!name) {
-    showNotifyBanner('Please enter a server name');
-    return;
-  }
-  
-  await createServer(name, members);
-  document.getElementById('serverModal').style.display = 'none';
-  document.getElementById('serverNameInput').value = '';
-  document.getElementById('serverMembersInput').value = '';
-});
-
 
 
 
@@ -2023,7 +2680,11 @@ el.querySelectorAll('.reaction').forEach(reaction => {
     reaction.addEventListener('click', async (e) => {
         e.stopPropagation();
         const emoji = reaction.dataset.emoji;
-        await addReaction(msg.id, emoji);
+        if (currentServer === 'public') {
+            await addReaction(msg.id, emoji);
+        } else {
+            await addPrivateReaction(msg.id, emoji);
+        }
     });
 });
   if((isAdmin) || (currentUser && msg.username === currentUser.username && !msg.deleted)){
@@ -2088,7 +2749,63 @@ el.querySelectorAll('.reaction').forEach(reaction => {
 
 
 
-
+// ADD THIS DEBUG FUNCTION
+async function debugPrivateServer() {
+    console.log('===== DEBUG PRIVATE SERVER =====');
+    console.log('currentServer:', currentServer);
+    console.log('currentUser:', currentUser?.username);
+    console.log('messages.length:', messages.length);
+    console.log('privateHasMoreMessages:', privateHasMoreMessages);
+    console.log('privateIsLoadingMore:', privateIsLoadingMore);
+    
+    const sessionToken = localStorage.getItem('chatSession');
+    console.log('sessionToken exists:', !!sessionToken);
+    
+    if (currentServer !== 'public') {
+        // Test edge function directly
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                action: 'get',
+                server_id: currentServer,
+                limit: 10
+            })
+        });
+        
+        const result = await response.json();
+        console.log('Edge function response status:', response.status);
+        console.log('Edge function messages count:', result.messages?.length);
+        console.log('First message:', result.messages?.[0]);
+        
+        // Test reaction directly
+        if (messages.length > 0) {
+            const testMessageId = messages[0].id;
+            console.log('Testing reaction on message:', testMessageId);
+            
+            const reactResponse = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionToken}`
+                },
+                body: JSON.stringify({
+                    action: 'react',
+                    server_id: currentServer,
+                    message_id: testMessageId,
+                    emoji: '👍'
+                })
+            });
+            
+            const reactResult = await reactResponse.json();
+            console.log('Reaction response:', reactResult);
+        }
+    }
+    console.log('===============================');
+}
 
 
 /* Replace the existing scroll handling code with this: */
@@ -2461,12 +3178,23 @@ document.getElementById('serverSelect').addEventListener('change', (e) => {
 });
 
 // Scroll listener - loads more when near TOP
+// Add this to your chat scroll listener (modify existing)
+// REPLACE your entire chat scroll listener with this
+// Update scroll listener
 chatDiv.addEventListener('scroll', function() {
-  if (chatDiv.scrollTop < 100 && // Near top
-      !isLoadingMessages && 
-      hasMoreMessages) {
-    fetchRecent(false); // Load older messages
-  }
+    const isNearTop = chatDiv.scrollTop < 100;
+    
+    if (currentServer === 'public') {
+        if (isNearTop && !isLoadingMessages && hasMoreMessages) {
+            fetchRecent(false);
+        }
+    }
+    
+    if (currentServer !== 'public') {
+        if (isNearTop && !isLoadingMore && messages.length > 0) {
+            loadMorePrivateMessages();
+        }
+    }
 });
 
 // Server change listener
@@ -2568,77 +3296,80 @@ async function subscribeRealtime() {
     .subscribe();
 }
 
+// REPLACE deleteMessage function
 async function deleteMessage(id) {
-  try {
-    console.log('🗑️ Attempting to delete message:', id);
+    console.log('🗑️ DELETE MESSAGE CALLED for id:', id);
+    console.log('currentServer:', currentServer);
+    console.log('currentUser:', currentUser?.username);
     
-    // First, check if the message exists and get its details
-    const { data: messageData, error: fetchError } = await supabase
-      .from(TABLE)
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (fetchError) {
-      console.error('❌ Error fetching message:', fetchError);
-      showNotifyBanner('Message not found: ' + fetchError.message);
-      return false;
+    const sessionToken = localStorage.getItem('chatSession');
+    if (!sessionToken) {
+        console.log('❌ No session token');
+        showNotifyBanner('Not authenticated');
+        return false;
     }
     
-    console.log('📝 Message to delete:', messageData);
-    console.log('📝 Message username:', messageData.username);
-    console.log('📝 Current user:', currentUser?.username);
-    console.log('📝 Is admin:', isAdmin);
-    
-    // Try to delete
-    const { data, error } = await supabase
-      .from(TABLE)
-      .delete()
-      .eq('id', id)
-      .select();
-    
-    if (error) {
-      console.error('❌ Delete error details:', error);
-      console.error('❌ Error code:', error.code);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error details:', error.details);
-      showNotifyBanner(`Delete failed: ${error.message}`);
-      return false;
+    try {
+        let response;
+        
+        if (currentServer === 'public') {
+            // Public server - use direct delete with RLS
+            console.log('Deleting from public server');
+            const { data, error } = await supabase
+                .from(TABLE)
+                .delete()
+                .eq('id', id)
+                .select();
+            
+            if (error) {
+                console.error('Delete error:', error);
+                showNotifyBanner('Delete failed: ' + error.message);
+                return false;
+            }
+            response = { ok: !error, data };
+        } else {
+            // Private server - use edge function
+            console.log('Deleting from private server via edge function');
+            const fetchResponse = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${sessionToken}`
+                },
+                body: JSON.stringify({
+                    action: 'delete',
+                    server_id: currentServer,
+                    message_id: id
+                })
+            });
+            
+            const result = await fetchResponse.json();
+            console.log('Delete response:', result);
+            response = { ok: fetchResponse.ok, data: result };
+        }
+        
+        if (response.ok) {
+            // Remove from local messages
+            messages = messages.filter(msg => msg.id !== id);
+            displayed.delete(id);
+            saveLocalState();
+            
+            // Remove from DOM
+            const msgElement = document.querySelector(`.message[data-id="${id}"]`);
+            if (msgElement) msgElement.remove();
+            
+            showNotifyBanner('Message deleted');
+            console.log('✅ Delete successful');
+            return true;
+        } else {
+            showNotifyBanner('Delete failed');
+            return false;
+        }
+    } catch (e) {
+        console.error('Delete error:', e);
+        showNotifyBanner('Delete error: ' + e.message);
+        return false;
     }
-    
-    console.log('✅ Delete response:', data);
-    
-    if (data && data.length === 0) {
-      console.warn('⚠️ No rows were deleted. RLS might be blocking!');
-      showNotifyBanner('Message not deleted. RLS policy might be blocking.');
-      return false;
-    }
-    
-    // Verify deletion
-    const { data: verifyData, error: verifyError } = await supabase
-      .from(TABLE)
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (verifyData) {
-      console.error('❌ Message STILL exists after delete!', verifyData);
-      showNotifyBanner('Message still exists after delete - RLS issue!');
-      return false;
-    } else {
-      console.log('✅ Verified: Message is gone from database');
-    }
-    
-    // Refresh messages
-    await fetchRecent(true);
-    showNotifyBanner('Message deleted successfully');
-    return true;
-    
-  } catch (e) {
-    console.error('❌ Delete exception:', e);
-    showNotifyBanner('Delete error: ' + e.message);
-    return false;
-  }
 }
 
 /* ==== Load local state and initial render ==== */
@@ -2796,6 +3527,70 @@ async function secureLogout() {
     currentUser = null;
     location.reload();
 }
+
+
+
+
+
+
+
+
+
+
+
+// ADD THIS FUNCTION - Exact same refresh pattern as sendMessage for private servers
+// REPLACE this function - Now uses SAME rendering as public server
+// Update refreshPrivateMessagesAfterAction with logs
+// REPLACE refreshPrivateMessagesAfterAction
+async function refreshPrivateMessagesAfterAction() {
+    if (currentServer === 'public') return;
+    if (!currentUser) return;
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) return;
+        
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                action: 'get',
+                server_id: currentServer,
+                limit: 200  // Match edge function limit
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages) {
+            const newMessages = result.messages.map(m => ({
+                id: m.id,
+                username: m.username,
+                message: m.content,
+                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
+                deleted: m.deleted || false,
+                replies: m.replies || null,
+                server_id: m.server_id || currentServer,
+                created_at: m.created_at
+            })).reverse();
+            
+            messages = newMessages;
+            clearChatAndRenderAll();  // Uses same rendering as public
+            console.log('✅ Messages refreshed, count:', messages.length);
+        }
+    } catch (err) {
+        console.error('Refresh error:', err);
+    }
+}
+
+
+
+
+
+
 
 // REPLACE sendMessage with this
 // REPLACE sendMessage with this
@@ -3486,6 +4281,22 @@ async function getAuthToken() {
 
 
 
+
+
+// Call this ONCE after login - sets the session for RLS
+async function initRLSSession(username) {
+    if (!supabase) return;
+    try {
+        // Set the session variable
+        await supabase.rpc('set_config', {
+            parameter: 'app.current_user',
+            value: username
+        });
+        console.log('✅ RLS session set for:', username);
+    } catch (e) {
+        console.error('Failed to set RLS session:', e);
+    }
+}
 
 
 
