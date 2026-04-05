@@ -2690,6 +2690,7 @@ function clearChatAndRenderAll(){
   displayed.clear();
   for(const m of messages){ renderOneMessage(m,false); }
   chatDiv.scrollTop = chatDiv.scrollHeight;
+  setTimeout(() => initializeEmojiPickers(), 50);
 }
 function renderOneMessage(msg, live=false){
   if(displayed.has(msg.id)) return;
@@ -2915,6 +2916,7 @@ el.querySelectorAll('.reaction').forEach(reaction => {
   }
 
   chatDiv.appendChild(el);
+  attachEmojiPickerToMessage(el, msg.id);
   if(live && currentUser && msg.username !== currentUser.username && !msg.deleted){
     if (!isTabActive) {
       if(msg.message && msg.message.includes('@' + currentUser.username)){
@@ -2927,6 +2929,134 @@ el.querySelectorAll('.reaction').forEach(reaction => {
   }
   chatDiv.scrollTop = chatDiv.scrollHeight;
 }
+
+
+
+
+
+
+
+
+
+
+
+// ADD THIS NEW FUNCTION - Separate emoji picker that actually works
+function attachEmojiPickerToMessage(messageElement, messageId) {
+    // Check if emoji picker already exists on this message
+    if (messageElement.querySelector('.custom-emoji-picker-container')) {
+        return;
+    }
+    
+    // Find or create the emoji picker button
+    let emojiBtn = messageElement.querySelector('.emoji-picker-btn');
+    if (!emojiBtn) {
+        // Create the button if it doesn't exist
+        emojiBtn = document.createElement('div');
+        emojiBtn.className = 'emoji-picker-btn';
+        emojiBtn.textContent = '😀';
+        emojiBtn.setAttribute('data-message', messageId);
+        
+        // Find the content div to append to
+        const contentDiv = messageElement.querySelector('div[style*="flex: 1"]');
+        if (contentDiv) {
+            contentDiv.appendChild(emojiBtn);
+        } else {
+            messageElement.appendChild(emojiBtn);
+        }
+    }
+    
+    // Create emoji picker container
+    const pickerContainer = document.createElement('div');
+    pickerContainer.className = 'custom-emoji-picker-container';
+    pickerContainer.style.cssText = `
+        position: absolute;
+        bottom: -350px;
+        right: 10px;
+        background: var(--card-background);
+        border: 1px solid var(--border-color);
+        border-radius: 30px;
+        padding: 8px 8px;
+        display: none;
+        z-index: 100;
+        box-shadow: 0 4px 12px var(--shadow-color);
+        gap: 1px;
+        flex-wrap: wrap;
+        width: auto;
+        max-width: 45px;
+    `;
+    
+    // Common emojis for quick picker
+    const quickEmojis = ['😀', '😂', '😍', '🔥', '👍', '❤️', '😢', '😡', '🎉', '💀'];
+    
+    quickEmojis.forEach(emoji => {
+        const emojiOption = document.createElement('span');
+        emojiOption.textContent = emoji;
+        emojiOption.style.cssText = `
+            cursor: pointer;
+            font-size: 20px;
+            padding: 4px;
+            border-radius: 8px;
+            transition: background 0.2s;
+            display: inline-block;
+        `;
+        emojiOption.onmouseenter = () => emojiOption.style.background = 'var(--secondary-background)';
+        emojiOption.onmouseleave = () => emojiOption.style.background = 'transparent';
+        emojiOption.onclick = async (e) => {
+            e.stopPropagation();
+            await addReaction(messageId, emoji);
+            pickerContainer.style.display = 'none';
+        };
+        pickerContainer.appendChild(emojiOption);
+    });
+    
+    messageElement.style.position = 'relative';
+    messageElement.appendChild(pickerContainer);
+    
+    // Toggle picker on button click
+    const newEmojiBtn = messageElement.querySelector('.emoji-picker-btn');
+    if (newEmojiBtn) {
+        newEmojiBtn.onclick = (e) => {
+            e.stopPropagation();
+            // Close all other pickers first
+            document.querySelectorAll('.custom-emoji-picker-container').forEach(picker => {
+                if (picker !== pickerContainer) {
+                    picker.style.display = 'none';
+                }
+            });
+            pickerContainer.style.display = pickerContainer.style.display === 'none' ? 'flex' : 'none';
+        };
+    }
+    
+    // Close picker when clicking elsewhere
+    const closePicker = (e) => {
+        if (!messageElement.contains(e.target)) {
+            pickerContainer.style.display = 'none';
+        }
+    };
+    document.removeEventListener('click', closePicker);
+    document.addEventListener('click', closePicker);
+}
+
+
+
+
+// ADD THIS FUNCTION - Call it after rendering messages
+function initializeEmojiPickers() {
+    // Find all messages that don't have emoji pickers attached
+    const messages = document.querySelectorAll('.message');
+    messages.forEach(msgElement => {
+        const messageId = msgElement.dataset.id;
+        // Check if picker already attached
+        if (!msgElement.querySelector('.custom-emoji-picker-container')) {
+            attachEmojiPickerToMessage(msgElement, messageId);
+        }
+    });
+}
+
+
+
+
+
 
 
 
@@ -5068,6 +5198,7 @@ async function addReaction(messageId, emoji) {
                     const newElement = document.querySelector(`.message[data-id="${messageId}"]`);
                     if (newElement && messageElement !== newElement) {
                         messageElement.replaceWith(newElement);
+                        attachEmojiPickerToMessage(newElement, updatedMessage.id);
                     }
                 }
             }
