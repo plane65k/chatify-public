@@ -2422,30 +2422,43 @@ async function subscribeRealtime() {
           }
         }
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: TABLE }, (payload) => {
-        console.log('🔄 Realtime UPDATE:', payload.new);
-        const m = payload.new;
-        const text = m.content || m.message || m.text || '';
-        const updatedMessage = {
-          id: m.id,
-          username: m.username || 'anon',
-          message: text,
-          timestamp: m.timestamp || (m.created_at ? new Date(m.created_at).toLocaleTimeString() : ''),
-          deleted: m.deleted || false,
-          replies: m.replies || null,
-          server_id: m.server_id || 'public'
-        };
-        
-        // Only update if message belongs to current server
-        if (updatedMessage.server_id === currentServer) {
-          const idx = messages.findIndex(msg => msg.id === updatedMessage.id);
-          if (idx !== -1) {
-            messages[idx] = updatedMessage;
+      .on('postgres_changes', { 
+    event: 'UPDATE', 
+    schema: 'public', 
+    table: TABLE 
+}, (payload) => {
+    console.log('🔄 Realtime UPDATE:', payload.new);
+    const updatedMessage = payload.new;
+    
+    // Only update if message belongs to current server
+    if (updatedMessage.server_id === currentServer) {
+        const idx = messages.findIndex(msg => msg.id === updatedMessage.id);
+        if (idx !== -1) {
+            // Update only the specific message in local array
+            messages[idx] = {
+                id: updatedMessage.id,
+                username: updatedMessage.username,
+                message: updatedMessage.content || updatedMessage.message || '',
+                timestamp: updatedMessage.created_at ? new Date(updatedMessage.created_at).toLocaleTimeString() : '',
+                deleted: updatedMessage.deleted || false,
+                replies: updatedMessage.replies || null,
+                server_id: updatedMessage.server_id || 'public'
+            };
             saveLocalState();
-            clearChatAndRenderAll();
-          }
+            
+            // Update only that message in DOM
+            const messageElement = document.querySelector(`.message[data-id="${updatedMessage.id}"]`);
+            if (messageElement) {
+                displayed.delete(updatedMessage.id);
+                renderOneMessage(messages[idx], false);
+                const newElement = document.querySelector(`.message[data-id="${updatedMessage.id}"]`);
+                if (newElement && messageElement !== newElement) {
+                    messageElement.replaceWith(newElement);
+                }
+            }
         }
-      })
+    }
+})
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: TABLE }, (payload) => {
   console.log('🗑️ Realtime DELETE received:', payload);
   const deletedId = payload.old.id;
@@ -4628,97 +4641,60 @@ function debugSession() {
 
 /* ==== Reaction Functions ==== */
 async function addReaction(messageId, emoji) {
-    if (!currentUser) return;
+    if (!currentUser) {
+        console.log('❌ No current user');
+        return;
+    }
+    
+    console.log('🎯 Adding reaction:', { messageId, emoji, user: currentUser.username });
+    
+    const sessionToken = localStorage.getItem('chatSession');
+    
+    if (!sessionToken) {
+        showNotifyBanner('Please login again');
+        return;
+    }
     
     try {
-        // Find the message
-        const messageIndex = messages.findIndex(m => m.id === messageId);
-        if (messageIndex === -1) return;
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/update-reaction', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
+            body: JSON.stringify({
+                messageId: messageId,
+                emoji: emoji
+            })
+        });
         
-        const message = messages[messageIndex];
+        const result = await response.json();
         
-        // Parse existing reactions
-        let currentReactions = {};
-        if (message.replies) {
-            try {
-                currentReactions = typeof message.replies === 'string' ? JSON.parse(message.replies) : message.replies;
-            } catch(e) {
-                currentReactions = {};
-            }
-        }
-        
-        // Toggle reaction (same logic as before)
-        if (!currentReactions[emoji]) {
-            currentReactions[emoji] = [];
-        }
-        
-        const userIndex = currentReactions[emoji].indexOf(currentUser.username);
-        if (userIndex > -1) {
-            currentReactions[emoji].splice(userIndex, 1);
-            if (currentReactions[emoji].length === 0) {
-                delete currentReactions[emoji];
-            }
-        } else {
-            currentReactions[emoji].push(currentUser.username);
-        }
-        
-        const updatedReplies = JSON.stringify(currentReactions);
-        
-        // ========== FIX: Use the SAME pattern as sendMessage ==========
-        // Instead of .update() which may be blocked by RLS, use .insert() pattern
-        // But since we need to UPDATE, we'll do a direct update with select to verify
-        
-        console.log('Attempting to update message:', messageId);
-        
-        // Try the update with select to see what happens
-        const { data, error } = await supabase
-            .from(TABLE)
-            .update({ replies: updatedReplies })
-            .eq('id', messageId)
-            .select();  // This returns the updated row
-        
-        if (error) {
-            console.error('Update failed with error:', error);
-            
-            // If update fails, try a different approach - fetch and then try again
-            if (error.message.includes('permission') || error.code === '42501') {
-                console.log('Permission denied, trying alternative method...');
+        if (response.status === 200 && result.success) {
+            // Update local messages array
+            const messageIndex = messages.findIndex(m => m.id === messageId);
+            if (messageIndex !== -1) {
+                messages[messageIndex] = result.message;
+                saveLocalState();
                 
-                // Try using the same RPC function pattern if available
-                // Or show helpful message
-                showNotifyBanner('Cannot update reactions: RLS policy blocking. Admin needs to add UPDATE policy for replies column.');
-                return;
-            }
-            
-            showNotifyBanner('Failed: ' + error.message);
-            return;
-        }
-        
-        console.log('Update successful:', data);
-        
-        // Update local state
-        messages[messageIndex].replies = updatedReplies;
-        saveLocalState();
-        
-        // Re-render the specific message only
-        const messageElement = document.querySelector(`.message[data-id="${messageId}"]`);
-        if (messageElement) {
-            // Remove from displayed set to force re-render
-            displayed.delete(messageId);
-            // Re-render just this message
-            renderOneMessage(messages[messageIndex], false);
-            // Replace the old element with new one
-            const newElement = document.querySelector(`.message[data-id="${messageId}"]`);
-            if (newElement && messageElement !== newElement) {
-                messageElement.replaceWith(newElement);
+                // Re-render only this message
+                const messageElement = document.querySelector(`.message[data-id="${messageId}"]`);
+                if (messageElement) {
+                    displayed.delete(messageId);
+                    renderOneMessage(messages[messageIndex], false);
+                    const newElement = document.querySelector(`.message[data-id="${messageId}"]`);
+                    if (newElement && messageElement !== newElement) {
+                        messageElement.replaceWith(newElement);
+                    }
+                }
             }
         } else {
-            clearChatAndRenderAll();
+            showNotifyBanner(result.error || 'Failed to add reaction');
         }
         
     } catch (error) {
         console.error('Reaction error:', error);
-        showNotifyBanner('Error: ' + error.message);
+        showNotifyBanner('Network error');
     }
 }
 
