@@ -3612,77 +3612,60 @@ async function subscribeRealtime() {
 }
 
 // REPLACE deleteMessage function
-async function deleteMessage(id) {
-    console.log('🗑️ DELETE MESSAGE CALLED for id:', id);
-    console.log('currentServer:', currentServer);
-    console.log('currentUser:', currentUser?.username);
+// REPLACE your existing deleteMessage function with this
+async function deleteMessage(messageId) {
+    console.log('🗑️ Attempting to delete message:', messageId);
     
     const sessionToken = localStorage.getItem('chatSession');
+    
     if (!sessionToken) {
-        console.log('❌ No session token');
-        showNotifyBanner('Not authenticated');
+        showNotifyBanner('Please login again');
         return false;
     }
     
     try {
-        let response;
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/delete-message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
+            body: JSON.stringify({
+                messageId: messageId
+            })
+        });
         
-        if (currentServer === 'public') {
-            // Public server - use direct delete with RLS
-            console.log('Deleting from public server');
-            const { data, error } = await supabase
-                .from(TABLE)
-                .delete()
-                .eq('id', id)
-                .select();
-            
-            if (error) {
-                console.error('Delete error:', error);
-                showNotifyBanner('Delete failed: ' + error.message);
-                return false;
-            }
-            response = { ok: !error, data };
-        } else {
-            // Private server - use edge function
-            console.log('Deleting from private server via edge function');
-            const fetchResponse = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${sessionToken}`
-                },
-                body: JSON.stringify({
-                    action: 'delete',
-                    server_id: currentServer,
-                    message_id: id
-                })
-            });
-            
-            const result = await fetchResponse.json();
-            console.log('Delete response:', result);
-            response = { ok: fetchResponse.ok, data: result };
-        }
+        const result = await response.json();
         
-        if (response.ok) {
-            // Remove from local messages
-            messages = messages.filter(msg => msg.id !== id);
-            displayed.delete(id);
+        if (response.status === 200 && result.success) {
+            console.log('✅ Message deleted successfully');
+            
+            // Remove from local messages array
+            messages = messages.filter(m => m.id !== messageId);
             saveLocalState();
             
             // Remove from DOM
-            const msgElement = document.querySelector(`.message[data-id="${id}"]`);
-            if (msgElement) msgElement.remove();
+            const messageElement = document.querySelector(`.message[data-id="${messageId}"]`);
+            if (messageElement) {
+                messageElement.remove();
+                displayed.delete(messageId);
+            }
             
             showNotifyBanner('Message deleted');
-            console.log('✅ Delete successful');
             return true;
-        } else {
-            showNotifyBanner('Delete failed');
-            return false;
         }
-    } catch (e) {
-        console.error('Delete error:', e);
-        showNotifyBanner('Delete error: ' + e.message);
+        
+        if (response.status === 403) {
+            showNotifyBanner('Not authorized to delete this message');
+        } else {
+            showNotifyBanner(result.error || 'Failed to delete message');
+        }
+        
+        return false;
+        
+    } catch (error) {
+        console.error('Delete error:', error);
+        showNotifyBanner('Network error: ' + error.message);
         return false;
     }
 }
