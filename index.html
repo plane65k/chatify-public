@@ -1894,7 +1894,7 @@ async function loadMorePrivateMessages() {
             body: JSON.stringify({
                 action: 'get',
                 server_id: currentServer,
-                limit: 50,
+                limit: 150,
                 before_date: oldestMessage.created_at
             })
         });
@@ -2129,7 +2129,7 @@ async function refreshPrivateMessages() {
             body: JSON.stringify({
                 action: 'get',
                 server_id: currentServer,
-                limit: 100
+                limit: 200
             })
         });
         
