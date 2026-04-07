@@ -5329,6 +5329,122 @@ async function adminBanUser(username) {
     }
 }
 
+
+
+
+
+
+
+
+
+
+async function createServer(name, members) {
+  console.log('📝 Creating server via edge function:', { name, members });
+  
+  const sessionToken = localStorage.getItem('chatSession');
+  
+  if (!sessionToken) {
+    showNotifyBanner('Please login again');
+    return { success: false, error: 'No session' };
+  }
+  
+  try {
+    const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/create-server', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Token': sessionToken
+      },
+      body: JSON.stringify({
+        name: name,
+        members: members
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (response.status === 200 && result.success) {
+      console.log('✅ Server created:', result);
+      
+      // Reload servers to show the new one
+      await loadServers();
+      showNotifyBanner(`Server "${name}" created!`);
+      
+      // Auto-select the new server
+      const select = document.getElementById('serverSelect');
+      select.value = result.serverId;
+      
+      // Trigger change event to load messages
+      const changeEvent = new Event('change');
+      select.dispatchEvent(changeEvent);
+      
+      return { success: true, serverId: result.serverId };
+    }
+    
+    showNotifyBanner(result.error || 'Failed to create server');
+    return { success: false, error: result.error };
+    
+  } catch (error) {
+    console.error('Create server error:', error);
+    showNotifyBanner('Network error: ' + error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+
+
+
+
+
+// Create Server Button Click
+document.getElementById('createServerBtn').addEventListener('click', () => {
+  document.getElementById('serverModal').style.display = 'flex';
+});
+
+// Cancel Button
+document.getElementById('cancelServerBtn').addEventListener('click', () => {
+  document.getElementById('serverModal').style.display = 'none';
+});
+
+// Save/Create Server Button (UPDATED - calls the edge function version)
+document.getElementById('saveServerBtn').addEventListener('click', async () => {
+  const name = document.getElementById('serverNameInput').value.trim();
+  const members = document.getElementById('serverMembersInput').value.trim();
+  
+  if (!name) {
+    showNotifyBanner('Please enter a server name');
+    return;
+  }
+  
+  // Show loading state
+  const saveBtn = document.getElementById('saveServerBtn');
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = 'Creating...';
+  saveBtn.disabled = true;
+  
+  try {
+    await createServer(name, members);
+    document.getElementById('serverModal').style.display = 'none';
+    document.getElementById('serverNameInput').value = '';
+    document.getElementById('serverMembersInput').value = '';
+  } catch (error) {
+    console.error('Error:', error);
+    showNotifyBanner('Failed to create server');
+  } finally {
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+});
+
+
+
+
+
+
+
+
+
+
 async function adminUnbanUser(username) {
     if (!isAdmin || !currentUser) {
         showNotifyBanner('Only admin can use this command');
@@ -5691,6 +5807,5 @@ unbanBtn.addEventListener('click', async () => {
 </script>
 </body>
 </html>
-
 
 
