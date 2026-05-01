@@ -1330,7 +1330,7 @@ We may update these terms periodically. Continued use of the app after changes m
     <button id="notifyBtn">Notify</button>
   </div>
 
-  <div style="font-size:12px;color:#6b7280;margin-top:8px">Admin user: <strong>root</strong> — Admin PIN: <strong>fu</strong></div>
+  <div style="font-size:12px;color:#6b7280;margin-top:8px">Admin user: <strong>root123</strong> — Admin PIN: <strong></strong></div>
 </div>
 
 <!-- Profile Picture Modal -->
@@ -1428,7 +1428,7 @@ openSearchRecursive();
 
 
 /* ==== Config ==== */
-const ADMIN_USERNAME = 'root';
+const ADMIN_USERNAME = 'stinkypoop';
 
 
 /* ==== Supabase Configuration ==== */
@@ -5108,7 +5108,7 @@ function debugSession() {
                 console.log('✅ Session verified, auto-logging in:', result.username);
                 
                 currentUser = { username: result.username };
-                isAdmin = result.isAdmin || result.username === 'root';
+                isAdmin = result.isAdmin || result.username === 'root123';
                 
                 if(isAdmin){
                     adminBtn.style.display = 'inline-block';
@@ -6265,5 +6265,4 @@ console.log('🔔 =======================================');
 </script>
 </body>
 </html>
-
 
