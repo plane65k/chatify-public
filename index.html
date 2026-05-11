@@ -898,6 +898,172 @@ footer button{
 
 
 
+
+
+
+/* GIF Button and Keyboard - UPDATED */
+.gif-btn {
+  background: rgba(69, 190, 74, 0.8);
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  padding: 0.8rem;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+  margin-right: 8px;
+}
+
+.gif-btn:hover {
+  transform: scale(1.15);
+  box-shadow: 0 7px 25px rgba(69, 190, 74, 0.7);
+}
+
+.gif-keyboard {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 500px;
+  min-width: 280px;
+  height: 400px;
+  min-height: 300px;
+  max-height: 70vh;
+  background: var(--card-background);
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 32px var(--shadow-color);
+  display: none;
+  flex-direction: column;
+  z-index: 200;
+  overflow: hidden;
+  resize: both;
+}
+
+/* Custom resize handle */
+.gif-keyboard::after {
+  content: "↘";
+  position: absolute;
+  bottom: 3px;
+  right: 8px;
+  font-size: 14px;
+  color: var(--border-color);
+  cursor: nw-resize;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.gif-keyboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-background);
+  cursor: move;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.gif-keyboard-header h4 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-color);
+}
+
+.close-gif-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-color);
+  padding: 0 8px;
+}
+
+.gif-search-container {
+  padding: 12px;
+  flex-shrink: 0;
+}
+
+.gif-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 25px;
+  border: 1px solid var(--border-color);
+  background: var(--secondary-background);
+  color: var(--text-color);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.gif-search-input:focus {
+  outline: none;
+  border-color: var(--button-background);
+}
+
+.gif-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 200px;
+}
+
+.gif-result-item {
+  width: calc(33.333% - 8px);
+  min-width: 80px;
+  aspect-ratio: 1;
+  cursor: pointer;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.2s;
+}
+
+.gif-result-item:hover {
+  transform: scale(1.05);
+}
+
+.gif-result-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.loading-gifs {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-color);
+}
+
+/* Size controls */
+.resize-controls {
+  position: absolute;
+  bottom: 5px;
+  right: 30px;
+  display: flex;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--border-color);
+  pointer-events: none;
+}
+
+
+
+
+
+
+
+
 /* Admin modal */
 .admin-panel-btn{
   background:rgba(255,255,255,0.12);
@@ -1260,10 +1426,12 @@ We may update these terms periodically. Continued use of the app after changes m
   <div id="loading"><div class="loader"></div></div>
   <div id="chat" role="log" aria-live="polite"></div>
 
-  <footer>
-    <input id="messageInput" placeholder="Type a message..." />
-    
-    <button id="sendBtn">➤</button>
+ <footer>
+  <input id="messageInput" placeholder="Type a message..." style="flex: 1; padding: 10px 12px; font-size: 14px; min-height: 40px; max-height: 60px;" />
+  
+  <button id="gifBtn" class="gif-btn">🎬</button>
+  <button id="sendBtn">➤</button>
+</footer>
 
 <style>
   #sendBtn {
@@ -1294,6 +1462,24 @@ We may update these terms periodically. Continued use of the app after changes m
     box-shadow: 0 2px 10px rgba(69, 190, 74, 0.4);
   }
 </style>
+
+
+
+
+<!-- GIF Keyboard Modal -->
+<div id="gifKeyboard" class="gif-keyboard">
+  <div class="gif-keyboard-header">
+    <h4>🎬 Tenor GIFs</h4>
+    <button class="close-gif-btn" id="closeGifBtn">&times;</button>
+  </div>
+  <input type="text" id="gifSearchInput" class="gif-search-input" placeholder="Search for GIFs... (e.g., hello, laughing, good morning)" />
+  <div id="gifResults" class="gif-results">
+    <div class="loading-gifs">🔍 Search for GIFs above</div>
+  </div>
+</div>
+
+
+
 
 
   </footer>
@@ -6262,7 +6448,240 @@ console.log('🔔 =======================================');
 
 
 
+
+
+
+
+
+
+
+
+
+
+// ============================================
+// GIPHY GIF KEYBOARD INTEGRATION - RESIZABLE
+// ============================================
+
+// GIPHY API key
+const GIPHY_API_KEY = 'zp13FWKyoD50OMLmwd3mjKcdrQrhWFms';
+const GIPHY_API_URL = 'https://api.giphy.com/v1/gifs';
+
+// DOM elements
+const gifBtn = document.getElementById('gifBtn');
+const gifKeyboard = document.getElementById('gifKeyboard');
+const closeGifBtn = document.getElementById('closeGifBtn');
+const gifSearchInput = document.getElementById('gifSearchInput');
+const gifResults = document.getElementById('gifResults');
+
+let currentSearchTimeout = null;
+let isDragging = false;
+let dragOffsetX = 0, dragOffsetY = 0;
+
+// Load saved size and position
+function loadGifWindowSettings() {
+  const savedWidth = localStorage.getItem('gifWindowWidth');
+  const savedHeight = localStorage.getItem('gifWindowHeight');
+  const savedLeft = localStorage.getItem('gifWindowLeft');
+  const savedTop = localStorage.getItem('gifWindowTop');
+  
+  if (savedWidth) gifKeyboard.style.width = savedWidth;
+  if (savedHeight) gifKeyboard.style.height = savedHeight;
+  if (savedLeft && savedTop) {
+    gifKeyboard.style.left = savedLeft;
+    gifKeyboard.style.top = savedTop;
+    gifKeyboard.style.transform = 'none';
+  }
+}
+
+// Save window settings
+function saveGifWindowSettings() {
+  localStorage.setItem('gifWindowWidth', gifKeyboard.style.width);
+  localStorage.setItem('gifWindowHeight', gifKeyboard.style.height);
+  if (gifKeyboard.style.left) {
+    localStorage.setItem('gifWindowLeft', gifKeyboard.style.left);
+    localStorage.setItem('gifWindowTop', gifKeyboard.style.top);
+  }
+}
+
+// Make window resizable
+let isResizing = false;
+let startX, startY, startWidth, startHeight;
+
+gifKeyboard.addEventListener('mousedown', (e) => {
+  // Check if clicking on resize area (bottom-right corner)
+  const rect = gifKeyboard.getBoundingClientRect();
+  const isResizeHandle = (rect.right - e.clientX) < 15 && (rect.bottom - e.clientY) < 15;
+  
+  if (isResizeHandle) {
+    isResizing = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startWidth = gifKeyboard.offsetWidth;
+    startHeight = gifKeyboard.offsetHeight;
+    e.preventDefault();
+    return;
+  }
+  
+  // Dragging only works when clicking header
+  if (e.target.closest('.gif-keyboard-header') && !e.target.closest('.close-gif-btn')) {
+    isDragging = true;
+    const rect = gifKeyboard.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+    gifKeyboard.style.transform = 'none';
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (isResizing) {
+    const newWidth = Math.max(280, startWidth + (e.clientX - startX));
+    const newHeight = Math.max(300, Math.min(window.innerHeight * 0.7, startHeight + (e.clientY - startY)));
+    gifKeyboard.style.width = newWidth + 'px';
+    gifKeyboard.style.height = newHeight + 'px';
+    saveGifWindowSettings();
+  }
+  
+  if (isDragging) {
+    let newLeft = e.clientX - dragOffsetX;
+    let newTop = e.clientY - dragOffsetY;
+    
+    // Keep within viewport bounds
+    newLeft = Math.max(0, Math.min(window.innerWidth - gifKeyboard.offsetWidth, newLeft));
+    newTop = Math.max(0, Math.min(window.innerHeight - gifKeyboard.offsetHeight, newTop));
+    
+    gifKeyboard.style.left = newLeft + 'px';
+    gifKeyboard.style.top = newTop + 'px';
+    saveGifWindowSettings();
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  isResizing = false;
+  isDragging = false;
+});
+
+// Toggle GIF keyboard
+gifBtn.addEventListener('click', () => {
+  gifKeyboard.style.display = gifKeyboard.style.display === 'flex' ? 'none' : 'flex';
+  if (gifKeyboard.style.display === 'flex') {
+    loadGifWindowSettings();
+    searchGifs('trending');
+  }
+});
+
+// Close GIF keyboard
+closeGifBtn.addEventListener('click', () => {
+  gifKeyboard.style.display = 'none';
+});
+
+// Search GIFs as user types
+gifSearchInput.addEventListener('input', (e) => {
+  if (currentSearchTimeout) clearTimeout(currentSearchTimeout);
+  
+  const searchTerm = e.target.value.trim();
+  
+  currentSearchTimeout = setTimeout(() => {
+    if (searchTerm) {
+      searchGifs(searchTerm);
+    } else {
+      searchGifs('trending');
+    }
+  }, 500);
+});
+
+// Search GIFs from GIPHY
+async function searchGifs(query) {
+  gifResults.innerHTML = '<div class="loading-gifs">🎬 Loading GIFs...</div>';
+  
+  try {
+    let url = '';
+    
+    if (query === 'trending') {
+      url = `${GIPHY_API_URL}/trending?api_key=${GIPHY_API_KEY}&limit=20&rating=pg-13`;
+    } else {
+      url = `${GIPHY_API_URL}/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(query)}&limit=20&rating=pg-13`;
+    }
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.data && data.data.length > 0) {
+      gifResults.innerHTML = '';
+      
+      data.data.forEach(gif => {
+        const gifUrl = gif.images.fixed_height.url || gif.images.original.url;
+        
+        const gifItem = document.createElement('div');
+        gifItem.className = 'gif-result-item';
+        gifItem.innerHTML = `<img src="${gifUrl}" alt="${gif.title || 'GIF'}" loading="lazy" />`;
+        
+        gifItem.addEventListener('click', () => {
+          messageInput.value = gifUrl;
+          sendMessage();
+          gifKeyboard.style.display = 'none';
+          gifSearchInput.value = '';
+        });
+        
+        gifResults.appendChild(gifItem);
+      });
+    } else {
+      gifResults.innerHTML = '<div class="loading-gifs">😢 No GIFs found. Try another search!</div>';
+    }
+    
+  } catch (error) {
+    console.error('Error loading GIFs from GIPHY:', error);
+    gifResults.innerHTML = '<div class="loading-gifs">❌ Failed to load GIFs. Please try again.</div>';
+  }
+}
+
+// Close GIF keyboard when clicking outside
+document.addEventListener('click', (e) => {
+  if (gifKeyboard.style.display === 'flex') {
+    if (!gifKeyboard.contains(e.target) && e.target !== gifBtn) {
+      gifKeyboard.style.display = 'none';
+    }
+  }
+});
+
+// Adjust GIF result sizes based on window width
+function adjustGifResults() {
+  const gifItems = document.querySelectorAll('.gif-result-item');
+  const containerWidth = gifResults.clientWidth;
+  let columns = 3;
+  
+  if (containerWidth < 300) columns = 2;
+  if (containerWidth > 500) columns = 4;
+  
+  const width = `calc(${100 / columns}% - 8px)`;
+  gifItems.forEach(item => {
+    item.style.width = width;
+  });
+}
+
+// Observe window resize
+const resizeObserver = new ResizeObserver(() => {
+  adjustGifResults();
+});
+resizeObserver.observe(gifResults);
+
+console.log('🎬 GIPHY GIF Keyboard loaded! Drag to move, drag corner to resize. Compact input field ready!');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 </script>
 </body>
 </html>
+
 
