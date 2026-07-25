@@ -262,302 +262,28 @@ html,body{
 }
 
 /* PIN overlay */
-#pinOverlay{
-  position:fixed;
-  inset:0;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  background:var(--overlay-background);
-  z-index:100;
-}
+/* ==== MODERN LOGIN SCREEN - SPLIT LAYOUT (SMALLER FOR LAPTOP) ==== */
 #pinOverlay {
   position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--overlay-background)
+  background: var(--background-color); /* Solid color from theme */
   z-index: 100;
+  padding: 60px 20px; /* More vertical margin */
+  backdrop-filter: none; /* Removed blur for solid background */
 }
 
 #pinBox {
+  display: flex;
   background: var(--card-background);
-  padding: 30px;
   border-radius: 28px;
-  width: 90%;
-  max-width: 480px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border-color);
-}
-
-/* Allow nested divs inside pinBox without breaking */
-#pinBox > div {
-  margin-bottom: 15px;
-}
-
-#pinBox input {
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  width: 100%;
-  margin-bottom: 10px;
-  background: var(--secondary-background);
-  color: var(--text-color);
-  box-sizing: border-box;
-}
-
-#pinBox button {
-  background: var(--button-background);
-  color: var(--button-text);
-  padding: 12px;
-  border-radius: 12px;
-  border: 0;
-  width: 100%;
-  cursor: pointer;
-  font-weight: 700;
-}
-/* Add header using pseudo-element - no extra divs needed */
-
-
-#pinBox::before {
-  content: "";
-  display: block;
-  text-align: center;
-  font-size: 40px;
-  font-weight: bold;
-  color: var(--text-color);
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 0px solid var(--button-background);
-}
-
-/* Left Panel */
-.pin-left {
-  flex: 1;
-  background: linear-gradient(135deg, var(--button-background) 0%, #2e7d32 100%);
-  padding: 40px 32px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  color: white;
-}
-
-.pin-left h2 {
-  font-size: 2rem;
-  margin-bottom: 16px;
-  font-weight: 700;
-}
-
-.pin-left p {
-  font-size: 1rem;
-  opacity: 0.9;
-  margin-bottom: 32px;
-  line-height: 1.5;
-}
-
-.pin-features {
-  margin-top: 20px;
-}
-
-.pin-feature {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.pin-feature span:first-child {
-  font-size: 20px;
-}
-
-.pin-feature span:last-child {
-  font-size: 14px;
-  opacity: 0.9;
-}
-
-/* Right Panel */
-.pin-right {
-  flex: 1;
-  padding: 40px 32px;
-  overflow-y: auto;
-  background: var(--card-background);
-  max-height: 80vh;
-}
-
-.pin-right h3 {
-  font-size: 1.5rem;
-  margin-bottom: 8px;
-  color: var(--text-color);
-}
-
-.pin-subtitle {
-  color: var(--text-color);
-  opacity: 0.6;
-  margin-bottom: 24px;
-  font-size: 14px;
-}
-
-.input-field {
-  margin-bottom: 16px;
-}
-
-.input-field label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-color);
-}
-
-.input-field input {
-  width: 100%;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 2px solid var(--border-color);
-  background: var(--secondary-background);
-  color: var(--text-color);
-  font-size: 14px;
-  box-sizing: border-box;
-}
-
-.input-field input:focus {
-  outline: none;
-  border-color: var(--button-background);
-}
-
-.pin-requirements {
-  background: var(--secondary-background);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin: 16px 0;
-  border-left: 3px solid var(--button-background);
-}
-
-.pin-requirements p {
-  font-weight: 600;
-  margin-bottom: 6px;
-  font-size: 12px;
-  color: var(--text-color);
-}
-
-.pin-requirements ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.pin-requirements li {
-  font-size: 11px;
-  color: var(--text-color);
-  opacity: 0.7;
-  margin: 4px 0;
-}
-
-.pin-terms {
-  background: var(--secondary-background);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin: 16px 0;
-  max-height: 100px;
-  overflow-y: auto;
-  border: 1px solid var(--border-color);
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--text-color);
-  opacity: 0.8;
-}
-
-.pin-terms strong {
-  color: var(--button-background);
-}
-
-#pinBtn {
-  width: 100%;
-  padding: 14px;
-  border-radius: 40px;
-  font-size: 16px;
-  font-weight: 600;
-  margin-top: 8px;
-  background: var(--button-background);
-  color: var(--button-text);
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-#pinBtn:hover {
-  filter: brightness(1.05);
-  transform: translateY(-1px);
-}
-
-.verification-link {
-  margin-top: 8px;
-  text-align: center;
-}
-
-.verification-link a {
-  font-size: 11px;
-  color: var(--button-background);
-  text-decoration: none;
-}
-
-/* Make sure verification code group is visible */
-#verificationCodeGroup {
-  display: none;
-}
-
-#verificationCodeInput {
-  width: 100%;
-  padding: 12px 16px;
-  border-radius: 12px;
-  border: 2px solid var(--border-color);
-  background: var(--secondary-background);
-  color: var(--text-color);
-  font-size: 14px;
-  box-sizing: border-box;
-  margin-bottom: 8px;
-}
-
-@media (max-width: 768px) {
-  #pinBox {
-    flex-direction: column;
-    width: 95%;
-    max-height: 90vh;
-  }
-  
-  .pin-left {
-    padding: 24px;
-  }
-  
-  .pin-left h2 {
-    font-size: 1.5rem;
-  }
-  
-  .pin-right {
-    padding: 24px;
-    max-height: 60vh;
-  }
-}<style>
-/* ==== MODERN LOGIN SCREEN - SPLIT LAYOUT ==== */
-#pinOverlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--overlay-background);
-  z-index: 100;
-  backdrop-filter: blur(4px);
-}
-
-#pinBox {
-  display: flex;
-  background: var(--card-background);
-  border-radius: 32px;
-  width: 90%;
-  max-width: 960px;
-  min-height: 520px;
-  box-shadow: 0 30px 80px rgba(0,0,0,0.25);
+  width: 92%;
+  max-width: 780px; /* Reduced from 960px */
+  min-height: 400px; /* Reduced from 520px */
+  max-height: 85vh;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.2);
   overflow: hidden;
   border: 1px solid var(--border-color);
 }
@@ -565,61 +291,61 @@ html,body{
 /* ==== LEFT PANEL - LOGIN FORM ==== */
 .pin-left {
   flex: 1 1 50%;
-  padding: 48px 40px;
+  padding: 32px 32px; /* Reduced from 48px 40px */
   display: flex;
   flex-direction: column;
   justify-content: center;
   background: var(--card-background);
-  min-width: 300px;
+  min-width: 260px; /* Reduced from 300px */
 }
 
 .pin-left .logo-area {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 28px;
+  gap: 10px;
+  margin-bottom: 18px; /* Reduced from 28px */
 }
 
 .pin-left .logo-area img {
-  height: 44px;
+  height: 36px; /* Reduced from 44px */
   width: auto;
 }
 
 .pin-left .logo-area h1 {
-  font-size: 28px;
+  font-size: 24px; /* Reduced from 28px */
   font-weight: 700;
   color: var(--text-color);
   margin: 0;
 }
 
 .pin-left .welcome-text {
-  font-size: 14px;
+  font-size: 13px; /* Reduced from 14px */
   color: var(--text-color);
   opacity: 0.7;
-  margin-bottom: 24px;
+  margin-bottom: 16px; /* Reduced from 24px */
 }
 
 .pin-left .input-group {
-  margin-bottom: 14px;
+  margin-bottom: 10px; /* Reduced from 14px */
 }
 
 .pin-left .input-group label {
   display: block;
-  font-size: 12px;
+  font-size: 11px; /* Reduced from 12px */
   font-weight: 600;
   color: var(--text-color);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   opacity: 0.8;
 }
 
 .pin-left .input-group input {
   width: 100%;
-  padding: 14px 16px;
-  border-radius: 14px;
+  padding: 10px 14px; /* Reduced from 14px 16px */
+  border-radius: 12px; /* Reduced from 14px */
   border: 2px solid var(--border-color);
   background: var(--secondary-background);
   color: var(--text-color);
-  font-size: 15px;
+  font-size: 14px; /* Reduced from 15px */
   transition: border-color 0.25s, box-shadow 0.25s;
   box-sizing: border-box;
 }
@@ -627,16 +353,16 @@ html,body{
 .pin-left .input-group input:focus {
   outline: none;
   border-color: var(--button-background);
-  box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.12);
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.12);
 }
 
 #pinBtn {
   width: 100%;
-  padding: 16px;
-  border-radius: 40px;
-  font-size: 16px;
+  padding: 12px; /* Reduced from 16px */
+  border-radius: 30px; /* Reduced from 40px */
+  font-size: 15px; /* Reduced from 16px */
   font-weight: 600;
-  margin-top: 6px;
+  margin-top: 4px;
   background: var(--button-background);
   color: var(--button-text);
   border: none;
@@ -646,17 +372,17 @@ html,body{
 }
 
 #pinBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(76, 175, 80, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.3);
 }
 
 .pin-left .verification-link {
-  margin-top: 12px;
+  margin-top: 8px;
   text-align: center;
 }
 
 .pin-left .verification-link a {
-  font-size: 12px;
+  font-size: 11px; /* Reduced from 12px */
   color: var(--button-background);
   text-decoration: none;
   font-weight: 500;
@@ -669,14 +395,14 @@ html,body{
 #verificationCodeInput {
   display: none;
   width: 100%;
-  padding: 14px 16px;
-  border-radius: 14px;
+  padding: 10px 14px; /* Reduced from 14px 16px */
+  border-radius: 12px;
   border: 2px solid var(--border-color);
   background: var(--secondary-background);
   color: var(--text-color);
-  font-size: 14px;
+  font-size: 13px; /* Reduced from 14px */
   box-sizing: border-box;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 #verificationCodeInput:focus {
@@ -697,10 +423,9 @@ html,body{
   text-align: center;
   position: relative;
   overflow: hidden;
-  min-width: 280px;
-  min-height: 400px;
-  /* RIGHT SIDE BORDER RADIUS - applied to container */
-  border-radius: 0 30px 30px 0;
+  min-width: 220px; /* Reduced from 280px */
+  min-height: 300px; /* Reduced from 400px */
+  border-radius: 0 28px 28px 0;
 }
 
 .pin-right::before {
@@ -708,82 +433,81 @@ html,body{
   position: absolute;
   inset: 0;
   background: url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT1yjoY7fzSVv8PJG_tSnroflB3urPoZkBUpdpeExDkKkmFQCTTVtaH6_eC&s=10') center/cover;
-  opacity: 0.25;
+  opacity: 0.2;
   z-index: 0;
-  /* Match the container's border-radius */
   border-radius: inherit;
 }
 
 .pin-right .brand-content {
   position: relative;
   z-index: 1;
-  padding: 40px 32px;
-  max-width: 400px;
+  padding: 28px 24px; /* Reduced from 40px 32px */
+  max-width: 320px; /* Reduced from 400px */
 }
 
 .pin-right .brand-icon {
-  font-size: 56px;
-  margin-bottom: 12px;
+  font-size: 40px; /* Reduced from 56px */
+  margin-bottom: 8px;
   display: block;
 }
 
 .pin-right h2 {
-  font-size: 2.4rem;
+  font-size: 1.8rem; /* Reduced from 2.4rem */
   font-weight: 800;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
   letter-spacing: -0.5px;
   text-shadow: 0 2px 20px rgba(0,0,0,0.2);
 }
 
 .pin-right .tagline {
-  font-size: 1.1rem;
+  font-size: 0.9rem; /* Reduced from 1.1rem */
   font-weight: 400;
-  opacity: 0.9;
-  margin: 0 0 20px 0;
-  letter-spacing: 0.5px;
+  opacity: 0.85;
+  margin: 0 0 14px 0;
+  letter-spacing: 0.3px;
 }
 
 .pin-right .feature-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px; /* Reduced from 12px */
   width: 100%;
-  margin-top: 12px;
+  margin-top: 8px; /* Reduced from 12px */
 }
 
 .pin-right .feature-item {
-  background: rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.08);
   backdrop-filter: blur(4px);
-  border-radius: 16px;
-  padding: 14px 12px;
+  border-radius: 12px; /* Reduced from 16px */
+  padding: 10px 8px; /* Reduced from 14px 12px */
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  border: 1px solid rgba(255,255,255,0.08);
+  gap: 2px;
+  border: 1px solid rgba(255,255,255,0.06);
   transition: background 0.2s;
 }
 
 .pin-right .feature-item:hover {
-  background: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.14);
 }
 
 .pin-right .feature-item span:first-child {
-  font-size: 20px;
+  font-size: 18px; /* Reduced from 20px */
 }
 
 .pin-right .feature-item span:last-child {
-  font-size: 11px;
-  opacity: 0.85;
+  font-size: 10px; /* Reduced from 11px */
+  opacity: 0.8;
   font-weight: 500;
 }
 
 .pin-right .brand-footer {
   position: relative;
   z-index: 1;
-  margin-top: 20px;
-  font-size: 12px;
-  opacity: 0.5;
+  margin-top: 14px; /* Reduced from 20px */
+  font-size: 10px; /* Reduced from 12px */
+  opacity: 0.4;
   letter-spacing: 0.5px;
 }
 
@@ -795,10 +519,11 @@ html,body{
     max-height: 95vh;
     border-radius: 24px;
     min-height: auto;
+    max-width: 100%;
   }
   
   .pin-left {
-    padding: 32px 24px;
+    padding: 28px 20px;
     min-width: unset;
     flex: none;
     order: 2;
@@ -806,62 +531,74 @@ html,body{
   
   .pin-right {
     flex: none;
-    min-height: 220px;
-    padding: 32px 20px;
+    min-height: 180px;
+    padding: 24px 16px;
     border-radius: 24px 24px 0 0;
     order: 1;
-  }
-  
-  .pin-right h2 {
-    font-size: 1.8rem;
-  }
-  
-  .pin-right .brand-icon {
-    font-size: 40px;
-  }
-  
-  .pin-right .feature-grid {
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-  }
-  
-  .pin-right .feature-item {
-    padding: 10px 8px;
-  }
-  
-  .pin-left .logo-area h1 {
-    font-size: 22px;
-  }
-}
-
-@media (max-width: 480px) {
-  .pin-right .feature-grid {
-    grid-template-columns: 1fr 1fr;
-    
+    min-width: unset;
   }
   
   .pin-right h2 {
     font-size: 1.5rem;
   }
   
+  .pin-right .brand-icon {
+    font-size: 32px;
+  }
+  
+  .pin-right .feature-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+  
+  .pin-right .feature-item {
+    padding: 8px 6px;
+  }
+  
+  .pin-left .logo-area h1 {
+    font-size: 20px;
+  }
+  
+  .pin-left .logo-area img {
+    height: 30px;
+  }
+}
+
+@media (max-width: 480px) {
+  #pinOverlay {
+    padding: 30px 10px;
+  }
+  
+  .pin-right .feature-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  
+  .pin-right h2 {
+    font-size: 1.3rem;
+  }
+  
   .pin-left {
-    padding: 24px 18px;
+    padding: 20px 14px;
+  }
+  
+  #pinBox {
+    border-radius: 20px;
   }
 }
 
 #pinBox input{
-  padding:12px;
+  padding:10px;
   border-radius:12px;
   border:1px solid var(--border-color);
   width:100%;
-  margin-bottom:10px;
+  margin-bottom:8px;
   background:transparent;
   color:var(--text-color)
 }
 #pinBox button{
   background:var(--button-background);
   color:var(--button-text);
-  padding:12px;
+  padding:10px;
   border-radius:12px;
   border:0;
   width:100%;
@@ -1745,7 +1482,7 @@ We may update these terms periodically. Continued use of the app after changes m
         
         <img src="https://res.cloudinary.com/dceqg5cky/image/upload/v1784959511/download_2_zo0yb2.png" 
      alt="title image here" 
-     style="width: 299px; height: auto; margin-top: 10px; margin-left: 25px; " />
+     style="width: 299px; height: auto; margin-top: 10px; margin-left: 5px; " />
       </div>
       <div class="brand-footer">© 2026 Chatify • v2.0</div>
     </div>
