@@ -432,7 +432,7 @@ html,body{
   content: '';
   position: absolute;
   inset: 0;
-  background: url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT1yjoY7fzSVv8PJG_tSnroflB3urPoZkBUpdpeExDkKkmFQCTTVtaH6_eC&s=10') center/cover;
+  background: url('https://i.pinimg.com/736x/97/5c/51/975c519ab0bec63a622623ae129681ef.jpg') center/cover;
   opacity: 0.2;
   z-index: 0;
   border-radius: inherit;
@@ -1404,7 +1404,34 @@ a{color:#0a66c2;text-decoration:underline}
 }
 
 
-
+  #userSearchContainer {
+    padding: 12px 16px 8px 16px;
+    border-bottom: 1px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    background: var(--card-background);
+    z-index: 10;
+  }
+  #userSearchInput {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 30px;
+    border: 2px solid var(--border-color);
+    background: var(--secondary-background);
+    color: var(--text-color);
+    font-size: 14px;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    outline: none;
+  }
+  #userSearchInput:focus {
+    border-color: var(--button-background);
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+  }
+  #userSearchInput::placeholder {
+    color: var(--text-color);
+    opacity: 0.5;
+  }
 </style>
 </head>
 <body>
@@ -7156,7 +7183,205 @@ console.log('🎬 GIPHY GIF Keyboard loaded! Drag to move, drag corner to resize
 
 
 
+ (function injectUserSearch() {
+    // Wait for modal to exist
+    const interval = setInterval(() => {
+      const modalContent = document.querySelector('#usersModal .profile-modal-content');
+      if (!modalContent) return;
 
+      // Check if search already exists
+      if (document.getElementById('userSearchContainer')) {
+        clearInterval(interval);
+        return;
+      }
+
+      // Create search container
+      const searchContainer = document.createElement('div');
+      searchContainer.id = 'userSearchContainer';
+      searchContainer.innerHTML = `
+        <input id="userSearchInput" type="text" placeholder="🔍 Search users..." autocomplete="off" />
+      `;
+
+      // Insert after the h3 header
+      const header = modalContent.querySelector('h3');
+      if (header) {
+        header.after(searchContainer);
+      } else {
+        modalContent.prepend(searchContainer);
+      }
+
+      // Get elements
+      const searchInput = document.getElementById('userSearchInput');
+      const usersList = document.getElementById('usersList');
+
+      // Store all users for filtering
+      let allUsersCache = [];
+
+      // Override loadUsersList to cache users
+      const originalLoadUsersList = window.loadUsersList;
+      if (originalLoadUsersList) {
+        window.loadUsersList = async function(searchTerm = '') {
+          // If searchTerm is empty, reload from server
+          if (!searchTerm) {
+            usersList.innerHTML = '<div style="text-align:center;color:var(--text-color);opacity:0.6;padding:40px;">Loading users...</div>';
+            try {
+              const { data, error } = await supabase
+                .from('users')
+                .select('username, pfp_url')
+                .order('username', { ascending: true });
+              if (error) throw error;
+              allUsersCache = data || [];
+              renderFilteredUsers(allUsersCache, '');
+            } catch (e) {
+              usersList.innerHTML = `<div style="text-align:center;color:var(--text-color);opacity:0.6;padding:40px;">Error loading users</div>`;
+            }
+            return;
+          }
+          // Otherwise, use cached data
+          renderFilteredUsers(allUsersCache, searchTerm);
+        };
+      }
+
+      // Render filtered users
+      function renderFilteredUsers(users, searchTerm) {
+        const searchLower = searchTerm.toLowerCase().trim();
+        let filtered = users;
+        if (searchLower) {
+          filtered = users.filter(u => u.username.toLowerCase().includes(searchLower));
+        }
+
+        // Sort: current user first
+        filtered.sort((a, b) => {
+          if (a.username === currentUser?.username) return -1;
+          if (b.username === currentUser?.username) return 1;
+          return a.username.localeCompare(b.username);
+        });
+
+        if (filtered.length === 0) {
+          usersList.innerHTML = `<div style="text-align:center;color:var(--text-color);opacity:0.6;padding:40px;">No users found matching "${searchTerm}"</div>`;
+          return;
+        }
+
+        usersList.innerHTML = '';
+        filtered.forEach(user => {
+          const isCurrentUser = user.username === currentUser?.username;
+          const pfpUrl = user.pfp_url || 'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif';
+
+          const userDiv = document.createElement('div');
+          userDiv.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border-color);
+            border-radius: 10px;
+            margin-bottom: 4px;
+            transition: background 0.2s, transform 0.15s;
+            cursor: pointer;
+            min-height: 56px;
+            gap: 12px;
+          `;
+          userDiv.onmouseenter = () => {
+            userDiv.style.background = 'var(--secondary-background)';
+            userDiv.style.transform = 'scale(1.01)';
+          };
+          userDiv.onmouseleave = () => {
+            userDiv.style.background = 'transparent';
+            userDiv.style.transform = 'scale(1)';
+          };
+
+          userDiv.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+              <img src="${escapeHtml(pfpUrl)}" alt="pfp" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+              <div style="display:flex;flex-direction:column;min-width:0;flex:1;">
+                <strong style="color:var(--text-color);word-break:break-word;font-size:14px;line-height:1.3;">
+                  ${escapeHtml(user.username)}
+                </strong>
+                ${isCurrentUser ? '<span style="font-size:11px;color:var(--button-background);font-weight:600;">You</span>' : ''}
+              </div>
+            </div>
+            ${!isCurrentUser ? `<button class="dm-btn" data-username="${escapeHtml(user.username)}" style="
+              background:var(--button-background);
+              color:var(--button-text);
+              border:none;
+              border-radius:30px;
+              padding:8px 18px;
+              cursor:pointer;
+              font-size:13px;
+              font-weight:600;
+              transition:all 0.2s;
+              flex-shrink:0;
+              white-space:nowrap;
+              box-shadow:0 2px 8px rgba(76,175,80,0.3);
+            ">DM</button>` : ''}
+          `;
+
+          usersList.appendChild(userDiv);
+        });
+
+        // Attach DM events
+        document.querySelectorAll('.dm-btn').forEach(btn => {
+          btn.addEventListener('mouseenter', () => {
+            btn.style.transform = 'scale(1.05)';
+            btn.style.boxShadow = '0 4px 16px rgba(76,175,80,0.5)';
+          });
+          btn.addEventListener('mouseleave', () => {
+            btn.style.transform = 'scale(1)';
+            btn.style.boxShadow = '0 2px 8px rgba(76,175,80,0.3)';
+          });
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const targetUsername = btn.dataset.username;
+            if (typeof startDirectMessage === 'function') {
+              await startDirectMessage(targetUsername);
+            } else {
+              alert('DM function not available');
+            }
+          });
+        });
+      }
+
+      // Search on input (letter by letter, no Enter needed)
+      searchInput.addEventListener('input', (e) => {
+        const term = e.target.value;
+        renderFilteredUsers(allUsersCache, term);
+      });
+
+      // Focus handling
+      searchInput.addEventListener('focus', () => {
+        searchInput.style.borderColor = 'var(--button-background)';
+        searchInput.style.boxShadow = '0 0 0 3px rgba(76,175,80,0.15)';
+      });
+      searchInput.addEventListener('blur', () => {
+        searchInput.style.borderColor = 'var(--border-color)';
+        searchInput.style.boxShadow = 'none';
+      });
+
+      // Override the modal open to load users and clear search
+      const usersBtn = document.getElementById('usersBtn');
+      const originalClick = usersBtn?.click;
+      usersBtn?.addEventListener('click', async () => {
+        // Wait for modal to show
+        setTimeout(async () => {
+          searchInput.value = '';
+          // Load users with empty search
+          if (typeof loadUsersList === 'function') {
+            await loadUsersList('');
+          } else {
+            // Fallback: direct fetch
+            try {
+              const { data } = await supabase.from('users').select('username, pfp_url').order('username');
+              allUsersCache = data || [];
+              renderFilteredUsers(allUsersCache, '');
+            } catch (e) {}
+          }
+        }, 100);
+      }, true);
+
+      clearInterval(interval);
+      console.log('✅ User search bar injected successfully!');
+    }, 200);
+  })();
 
 
 
