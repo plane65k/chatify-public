@@ -5614,35 +5614,65 @@ profileUrlInput.addEventListener('input', (e) => {
     profilePreview.src = url;
   }
 });
+// Replace the entire saveProfileBtn click handler with this
+// ============================================
+// PROFILE PICTURE UPDATE - EDGE FUNCTION METHOD
+// ============================================
+
 saveProfileBtn.addEventListener('click', async () => {
   const url = profileUrlInput.value.trim();
+
   if (!url) {
-    showNotifyBanner('Enter a valid URL');
+    showNotifyBanner('Please enter a valid image URL');
     return;
   }
-  
-  // Only update the pfp_url, not the PIN
-  const { error } = await supabase
-    .from('users')
-    .update({ pfp_url: url })
-    .eq('username', currentUser.username);
-    
-  if (error) {
-    showNotifyBanner('Save failed: ' + error.message);
+
+  try {
+    new URL(url);
+  } catch {
+    showNotifyBanner('Invalid URL format. Please enter a valid URL.');
     return;
   }
-  
-  userProfiles[currentUser.username] = url;
-  profileModal.style.display = 'none';
-  showNotifyBanner('PFP updated');
-  clearChatAndRenderAll();
+
+  const originalText = saveProfileBtn.textContent;
+  saveProfileBtn.textContent = 'Saving...';
+  saveProfileBtn.disabled = true;
+
+  try {
+    const username = currentUser?.username;
+    if (!username) {
+      showNotifyBanner('Please login first');
+      saveProfileBtn.textContent = originalText;
+      saveProfileBtn.disabled = false;
+      return;
+    }
+
+    const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/update-pfp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, pfp_url: url }),
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+      // Update local cache
+      userProfiles[currentUser.username] = url;
+      profileModal.style.display = 'none';
+      showNotifyBanner('✅ Profile picture updated successfully!');
+      clearChatAndRenderAll(); // Re-render messages to show new PFP
+    } else {
+      showNotifyBanner('❌ Failed to update: ' + (result.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('PFP update error:', error);
+    showNotifyBanner('Network error: ' + error.message);
+  } finally {
+    saveProfileBtn.textContent = originalText;
+    saveProfileBtn.disabled = false;
+  }
 });
-usersChannel = supabase.channel('public:users');
-usersChannel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, payload => {
-  const u = payload.new;
-  userProfiles[u.username] = u.pfp_url;
-  clearChatAndRenderAll();
-}).subscribe();
+
 
 /* ==== Notifications (animated banner) ==== */
 let bannerTimer = null;
