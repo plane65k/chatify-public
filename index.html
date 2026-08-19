@@ -2148,80 +2148,11 @@ let privateOldestDate = null;
 let privateIsLoadingMore = false;
 const PRIVATE_MESSAGES_PER_PAGE = 200;
 
-async function autoRefreshPrivateMessages() {
-    if (currentServer === 'public') return;
-    if (!currentUser) return;
-    if (isRefreshing) return;
-    
-    isRefreshing = true;
-    
-    try {
-        const sessionToken = localStorage.getItem('chatSession');
-        if (!sessionToken) {
-            isRefreshing = false;
-            return;
-        }
-        
-        // Fetch latest messages (newest first)
-        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${sessionToken}`
-            },
-            body: JSON.stringify({ 
-                server_id: currentServer, 
-                limit: PRIVATE_MESSAGES_PER_PAGE
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok && result.messages) {
-            const newMessages = result.messages.map(m => ({
-                id: m.id,
-                username: m.username,
-                message: m.content,
-                timestamp: m.created_at ? new Date(m.created_at).toLocaleString() : '',
-                deleted: m.deleted || false,
-                replies: m.replies || null,
-                server_id: m.server_id || currentServer,
-                created_at: m.created_at
-            })).reverse(); // Reverse to show oldest first
-            
-            // Check if new messages arrived
-            const hasNewMessages = newMessages.length !== messages.length ||
-                (newMessages.length > 0 && messages.length > 0 && 
-                 newMessages[newMessages.length - 1]?.id !== messages[messages.length - 1]?.id);
-            
-            if (hasNewMessages) {
-                const oldScrollHeight = chatDiv.scrollHeight;
-                const oldScrollTop = chatDiv.scrollTop;
-                const isAtBottom = chatDiv.scrollHeight - chatDiv.scrollTop - chatDiv.clientHeight < 50;
-                
-                messages = newMessages;
-                privateOldestDate = messages[0]?.created_at || null;
-                displayed.clear();
-                chatDiv.innerHTML = '';
-                messages.forEach(m => renderOneMessage(m, false));
-                
-                // Preserve scroll position unless at bottom
-                if (!isAtBottom && oldScrollHeight > 0) {
-                    const newScrollTop = oldScrollTop + (chatDiv.scrollHeight - oldScrollHeight);
-                    chatDiv.scrollTop = Math.max(0, newScrollTop);
-                } else if (isAtBottom) {
-                    chatDiv.scrollTop = chatDiv.scrollHeight;
-                }
-                
-                console.log(`✅ Refreshed ${messages.length} private messages`);
-            }
-        }
-    } catch (err) {
-        console.error('Auto-refresh error:', err);
-    } finally {
-        isRefreshing = false;
-    }
-}
+// Disable the old aggressive refresh
+autoRefreshPrivateMessages = function() {
+    // This function is now replaced by the smarter refreshPrivateMessagesIfNeeded
+    console.log('⏭️ Old autoRefreshPrivateMessages disabled');
+};
 
 // ADD THIS NEW FUNCTION - Load older private messages (infinite scroll)
 // REPLACE the loadMorePrivateMessages function with this
@@ -2474,14 +2405,14 @@ function startPrivateAutoRefresh() {
         clearInterval(privateAutoRefreshInterval);
     }
     
+    // INCREASED from 500ms to 5000ms (5 seconds)
     privateAutoRefreshInterval = setInterval(() => {
-        if (currentServer !== 'public' && currentUser) {
-            refreshPrivateMessagesAfterAction();
-            console.log('poop')
+        if (currentServer !== 'public' && currentUser && !isRefreshing) {
+            // Use this instead - it checks if there's actually new content
+            refreshPrivateMessagesIfNeeded();
         }
-    }, 500);
+    }, 5000);  // ← 5 seconds instead of 0.5 seconds
 }
-
 
 
 
@@ -2573,7 +2504,7 @@ async function fetchPrivateServerMessages(retryCount = 0) {
             body: JSON.stringify({
                 action: 'get',
                 server_id: currentServer,
-                limit: 100
+                limit: 150  // ← Changed from 100 to 150 (same as edge function default)
             })
         });
         
@@ -2592,10 +2523,9 @@ async function fetchPrivateServerMessages(retryCount = 0) {
             })).reverse();
             
             messages = newMessages;
-            privateHasMoreMessages = messages.length >= 100;
+            privateHasMoreMessages = messages.length >= 150;
             privateOldestDate = messages[0]?.created_at || null;
             
-            // USE EXACT SAME RENDERING AS PUBLIC SERVER
             clearChatAndRenderAll();
             console.log(`✅ Loaded ${messages.length} private messages`);
             return true;
@@ -4669,6 +4599,57 @@ async function secureLogout() {
 // REPLACE this function - Now uses SAME rendering as public server
 // Update refreshPrivateMessagesAfterAction with logs
 // REPLACE refreshPrivateMessagesAfterAction
+// ADD THIS NEW FUNCTION - Only refreshes if content actually changed
+async function refreshPrivateMessagesIfNeeded() {
+    if (currentServer === 'public') return;
+    if (!currentUser) return;
+    if (isRefreshing) return;
+    
+    isRefreshing = true;
+    
+    try {
+        const sessionToken = localStorage.getItem('chatSession');
+        if (!sessionToken) {
+            isRefreshing = false;
+            return;
+        }
+        
+        // Get only the latest message to check for changes
+        const response = await fetch('https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/get-messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${sessionToken}`
+            },
+            body: JSON.stringify({
+                action: 'get',
+                server_id: currentServer,
+                limit: 1  // ← Only fetch 1 message to check for changes
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.messages && result.messages.length > 0) {
+            const latestId = result.messages[0].id;
+            const currentLatestId = messages.length > 0 ? messages[messages.length - 1].id : null;
+            
+            // Only refresh if there's a new message
+            if (latestId !== currentLatestId) {
+                console.log('🔄 New message detected, refreshing...');
+                await refreshPrivateMessagesAfterAction();
+            } else {
+                console.log('✅ No new messages, skipping refresh');
+            }
+        }
+    } catch (err) {
+        console.error('Refresh check error:', err);
+    } finally {
+        isRefreshing = false;
+    }
+}
+
+// Keep this but remove the console.log('poop')
 async function refreshPrivateMessagesAfterAction() {
     if (currentServer === 'public') return;
     if (!currentUser) return;
@@ -4686,7 +4667,7 @@ async function refreshPrivateMessagesAfterAction() {
             body: JSON.stringify({
                 action: 'get',
                 server_id: currentServer,
-                limit: 200  // Match edge function limit
+                limit: 200
             })
         });
         
@@ -4705,8 +4686,7 @@ async function refreshPrivateMessagesAfterAction() {
             })).reverse();
             
             messages = newMessages;
-            clearChatAndRenderAll();  // Uses same rendering as public
-            console.log('✅ Messages refreshed, count:', messages.length);
+            clearChatAndRenderAll();
         }
     } catch (err) {
         console.error('Refresh error:', err);
@@ -7416,7 +7396,277 @@ console.log('🎬 GIPHY GIF Keyboard loaded! Drag to move, drag corner to resize
 
 
 
+// ============================================
+// UNREAD BADGES & NOTIFICATIONS for DMs
+// with EXTENSIVE LOGGING and MINIMALIST BELL
+// NOTIFICATIONS WORK WHEN TAB IS AWAY (even if on the same server)
+// ============================================
 
+// Store unread counts per server
+const unreadCounts = {};
+
+// Store original server names (without any suffix)
+const serverNames = {};
+
+// Helper: update dropdown options with 🔴 for servers with unread messages
+function updateServerBadges() {
+    const select = document.getElementById('serverSelect');
+    if (!select) return;
+
+    // Store clean names for options not yet in serverNames
+    for (const option of select.options) {
+        const val = option.value;
+        if (!serverNames[val]) {
+            const clean = option.text.replace(/\s*[🔴🟢]?\s*$/, '').trim();
+            serverNames[val] = clean;
+        }
+    }
+
+    // Update each option's text
+    for (const option of select.options) {
+        const val = option.value;
+        const count = unreadCounts[val] || 0;
+        const name = serverNames[val] || val;
+        const showBadge = count > 0 && val !== currentServer;
+        option.textContent = showBadge ? `${name} 🔴` : name;
+    }
+
+    updateBellIcon();
+}
+
+// Show/hide the minimalist bell icon next to the select
+function updateBellIcon() {
+    const select = document.getElementById('serverSelect');
+    if (!select) return;
+    
+    // Remove existing bell if it exists
+    const existingBell = document.getElementById('unreadBell');
+    if (existingBell) {
+        existingBell.remove();
+    }
+    
+    // Check if there are any unread messages
+    const hasUnread = Object.keys(unreadCounts).some(
+        sid => sid !== 'public' && sid !== currentServer && unreadCounts[sid] > 0
+    );
+    
+    // Only show bell if there are unread messages
+    if (hasUnread) {
+        const bell = document.createElement('span');
+        bell.id = 'unreadBell';
+        bell.style.cssText = `
+            display: inline-block;
+            font-size: 22px;
+            margin-left: 4px;
+            vertical-align: middle;
+            cursor: default;
+            color: #ff4444;
+            font-weight: 300;
+            opacity: 1;
+            transition: opacity 0.3s ease;
+        `;
+        bell.textContent = '🔔';
+        bell.title = 'You have unread messages in some servers';
+        select.parentNode.insertBefore(bell, select.nextSibling);
+    }
+}
+
+function incrementUnread(serverId) {
+    if (!serverId || serverId === 'public') return;
+    if (serverId === currentServer) return;
+    unreadCounts[serverId] = (unreadCounts[serverId] || 0) + 1;
+    updateServerBadges();
+    console.log(`🔴 Unread count for "${serverId}" → ${unreadCounts[serverId]}`);
+}
+
+function clearUnread(serverId) {
+    if (unreadCounts[serverId]) {
+        console.log(`✅ Cleared unread for "${serverId}"`);
+        delete unreadCounts[serverId];
+        updateServerBadges();
+    }
+}
+
+// Hook into server change to clear badge
+const originalServerChange = document.getElementById('serverSelect')?.onchange;
+document.getElementById('serverSelect')?.addEventListener('change', function(e) {
+    const newServer = this.value;
+    if (newServer !== currentServer) {
+        clearUnread(newServer);
+    }
+    if (typeof originalServerChange === 'function') {
+        originalServerChange.call(this, e);
+    }
+}, true);
+
+// ----- NOTIFICATION WRAPPER (NOTIFICATIONS EVEN ON SAME SERVER WHEN AWAY) -----
+const originalProcessMessageNotification = window.processMessageNotification;
+window.processMessageNotification = async function(message) {
+    console.log('📨 ========== processMessageNotification START ==========');
+    console.log('📨 message:', message);
+    if (!message) {
+        console.warn('⚠️ message is undefined/null');
+        return;
+    }
+
+    // Let the original handler do its thing (if it exists)
+    if (typeof originalProcessMessageNotification === 'function') {
+        console.log('📨 Calling original processMessageNotification...');
+        await originalProcessMessageNotification(message);
+        console.log('📨 Original processMessageNotification finished.');
+    }
+
+    const serverId = message.server_id || 'public';
+    const msgUsername = message.username || 'anon';
+    const msgContent = message.message || message.content || '';
+    console.log(`📨 serverId: "${serverId}", currentServer: "${currentServer}", msgUsername: "${msgUsername}"`);
+
+    // Only process private server messages, not from current user
+    // REMOVED the "serverId !== currentServer" condition - now notifies even if on the same server!
+    if (serverId !== 'public' && msgUsername !== currentUser?.username) {
+        console.log('📨 ✅ Condition met for private server message.');
+
+        // Only increment unread if it's not the current server
+        if (serverId !== currentServer) {
+            incrementUnread(serverId);
+        } else {
+            console.log('📨 Message is from current server - not incrementing unread count');
+        }
+
+        const serverName = (typeof getServerName === 'function') ? getServerName(serverId) : (servers[serverId]?.name || 'Private Server');
+
+        // ---- PUBLIC‑STYLE NOTIFICATION ----
+        // 1. Play sound (if the sound element exists)
+        const sound = document.getElementById('newMessageSound');
+        if (sound) {
+            try {
+                sound.currentTime = 0;
+                sound.play();
+                console.log('🔊 Sound played.');
+            } catch (e) {
+                console.warn('⚠️ Sound play failed:', e);
+            }
+        }
+
+        // 2. ALWAYS show notification when tab is NOT active (even if on same server)
+        if (typeof isTabActive !== 'undefined' && !isTabActive) {
+            console.log('📱 Tab is NOT active → showing alert and browser notification (even if on same server).');
+            // Show alert (like public)
+            alert(`💬 ${msgUsername} @ ${serverName}:\n${msgContent.substring(0, 80)}`);
+
+            // Also try browser notification if permission granted
+            if (typeof sendNotification === 'function') {
+                console.log('📨 Calling sendNotification...');
+                sendNotification(
+                    `💬 ${msgUsername} @ ${serverName}`,
+                    msgContent.substring(0, 120),
+                    `dm-${serverId}`
+                );
+            } else {
+                console.warn('⚠️ sendNotification not available.');
+            }
+        } else {
+            console.log('📱 Tab is active → no alert/browser notification (matching public behavior).');
+        }
+    } else {
+        console.log('📨 ❌ Condition NOT met (serverId public or own message).');
+        if (serverId === 'public') console.log('   - serverId is public');
+        if (msgUsername === currentUser?.username) console.log('   - message is from current user');
+    }
+    console.log('📨 ========== processMessageNotification END ==========');
+};
+
+// ----- WRAP POLLING TO LOG -----
+const originalPollAllPrivateServersForNotifications = window.pollAllPrivateServersForNotifications;
+if (typeof originalPollAllPrivateServersForNotifications === 'function') {
+    window.pollAllPrivateServersForNotifications = async function() {
+        console.log('🔄 Polling all private servers...');
+        await originalPollAllPrivateServersForNotifications();
+        console.log('🔄 Polling finished.');
+    };
+}
+
+// ----- REALTIME SUBSCRIPTION (calls processMessageNotification) -----
+const originalSubscribeRealtime = window.subscribeRealtime;
+window.subscribeRealtime = async function() {
+    console.log('📡 Setting up main realtime subscription...');
+    await originalSubscribeRealtime();
+    console.log('📡 Main subscription set up.');
+
+    // Add our own unread‑channel that also triggers notifications
+    if (supabase && !window.unreadChannel) {
+        console.log('📡 Adding unread-channel for INSERT events...');
+        window.unreadChannel = supabase.channel('unread-channel')
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: TABLE,
+            }, (payload) => {
+                const m = payload.new;
+                const serverId = m.server_id || 'public';
+                const msgUsername = m.username || 'anon';
+                console.log(`📨 Realtime INSERT received: serverId="${serverId}", username="${msgUsername}"`);
+
+                // Only process private messages from other users
+                if (serverId !== 'public' && msgUsername !== currentUser?.username) {
+                    console.log('📨 Calling processMessageNotification for this private message...');
+                    // Call our wrapper to handle notification
+                    if (typeof window.processMessageNotification === 'function') {
+                        window.processMessageNotification({
+                            id: m.id,
+                            username: m.username,
+                            message: m.content || m.message || '',
+                            server_id: m.server_id,
+                            created_at: m.created_at
+                        });
+                    } else {
+                        console.warn('⚠️ processMessageNotification not available.');
+                    }
+                } else {
+                    console.log('📨 Skipping notification (public or own message).');
+                }
+            })
+            .subscribe();
+        console.log('📡 unread-channel subscribed.');
+    } else {
+        console.log('📡 Skipped unread-channel: supabase not ready or already exists.');
+    }
+};
+
+// ----- REFRESH BADGES AFTER SERVER LIST UPDATE -----
+const originalLoadServers = window.loadServers;
+window.loadServers = async function() {
+    console.log('📂 Loading servers...');
+    await originalLoadServers();
+    console.log('📂 Servers loaded. Updating badges...');
+    updateServerBadges();
+};
+
+// ----- INIT AFTER LOGIN -----
+const originalProceedWithLogin = window.proceedWithLogin;
+window.proceedWithLogin = function(username, isAdminUser, sessionToken) {
+    console.log('🔐 Proceeding with login for:', username);
+    originalProceedWithLogin(username, isAdminUser, sessionToken);
+    setTimeout(() => {
+        console.log('🔐 Initializing badges...');
+        updateServerBadges();
+        clearUnread(currentServer);
+        console.log('🔐 Badges initialized.');
+    }, 1000);
+};
+
+// ----- HELPER: getServerName (fallback) -----
+if (typeof getServerName !== 'function') {
+    window.getServerName = function(serverId) {
+        if (serverId === 'public') return 'Public Chat';
+        if (servers[serverId]) return servers[serverId].name;
+        return 'Private Server';
+    };
+}
+
+console.log('✅ Unread badge system & DM notifications installed.');
+console.log('📢 NOTIFICATIONS WILL WORK EVEN IF YOU ARE ON THE SAME SERVER (when tab is away).');
+console.log('📢 Watch the console for detailed logs when a private message arrives.');
 </script>
 
 
