@@ -6767,6 +6767,12 @@ function canSendNotification(serverId) {
 }
 
 // Send notification for a message
+// ============================================
+// FIXED: Notification System - Proper Server Membership Filtering
+// ============================================
+
+// Replace the entire processMessageNotification function with this:
+
 async function processMessageNotification(message) {
     if (!notificationPermissionGranted) return;
     if (isPageFocused) return;
@@ -6776,25 +6782,69 @@ async function processMessageNotification(message) {
     const messageUsername = message.username || 'anon';
     const messageContent = message.message || message.content || '';
     
-    if (!shouldNotifyForMessage(messageServerId, messageUsername)) {
+    // ✅ FIXED: Skip own messages
+    if (currentUser && messageUsername === currentUser.username) {
+        console.log('⏭️ Skipping own message');
         return;
     }
     
-    if (!canSendNotification(messageServerId)) {
-        return;
+    // ✅ FIXED: For private servers, ONLY notify if user is a member
+    if (messageServerId !== 'public') {
+        // Check if user is a member of this server
+        const isMember = userServerMemberships.has(messageServerId);
+        
+        // Also check if the server exists and user is in the members list
+        let memberCheck = isMember;
+        if (!memberCheck && servers[messageServerId]) {
+            const members = servers[messageServerId].members || [];
+            memberCheck = members.includes(currentUser?.username);
+        }
+        
+        if (!memberCheck) {
+            console.log(`⏭️ User is NOT a member of server ${messageServerId}, skipping notification`);
+            return;
+        }
+        
+        console.log(`🔔 User IS a member of private server ${messageServerId}, notifying`);
     }
     
-    const truncatedContent = messageContent.length > 100 
-        ? messageContent.substring(0, 97) + '...' 
-        : messageContent;
+    // Rate limiting per server (max 1 every 3 seconds)
+    const now = Date.now();
+    const lastTime = lastNotificationTime.get(messageServerId) || 0;
+    if (now - lastTime < 3000) {
+        console.log('⏭️ Rate limited, skipping');
+        return;
+    }
+    lastNotificationTime.set(messageServerId, now);
     
-    const serverDisplayName = getServerName(messageServerId);
-    
-    sendNotification(
-        `💬 ${messageUsername} @ ${serverDisplayName}`,
-        truncatedContent,
-        `message-${messageServerId}`
-    );
+    // Only show notification if tab is not active
+    if (!isTabActive) {
+        const serverDisplayName = getServerName(messageServerId);
+        const truncatedContent = messageContent.length > 100 
+            ? messageContent.substring(0, 97) + '...' 
+            : messageContent;
+        
+        // Show alert
+        alert(`💬 ${messageUsername} @ ${serverDisplayName}:\n${truncatedContent}`);
+        
+        // Show browser notification
+        if (notificationPermissionGranted && 'Notification' in window) {
+            try {
+                const notification = new Notification(
+                    `💬 ${messageUsername} @ ${serverDisplayName}`,
+                    {
+                        body: truncatedContent,
+                        icon: 'https://res.cloudinary.com/dceqg5cky/image/upload/SDG_log-removebg-preview_bslq5d.png',
+                        tag: `msg-${messageServerId}`
+                    }
+                );
+                notification.onclick = () => window.focus();
+                setTimeout(() => notification.close(), 8000);
+            } catch (e) {
+                console.log('Browser notification failed:', e);
+            }
+        }
+    }
 }
 
 // ============================================
@@ -7559,8 +7609,31 @@ document.getElementById('serverSelect')?.addEventListener('change', function(e) 
     }
 }, true);
 
-// ----- NOTIFICATION WRAPPER (NOTIFICATIONS EVEN ON SAME SERVER WHEN AWAY) -----
+// ============================================
+// NOTIFICATION WRAPPER WITH MEMBERSHIP CHECK
+// ============================================
+
+// Helper: Check if current user is a member of a server
+function isUserMemberOfServer(serverId) {
+    if (serverId === 'public') return true;
+    if (!currentUser) return false;
+    
+    // Check cached memberships
+    if (userServerMemberships.has(serverId)) return true;
+    
+    // Fallback: check servers object
+    if (servers[serverId]) {
+        const members = servers[serverId].members || [];
+        return members.includes(currentUser.username);
+    }
+    
+    return false;
+}
+
+// Store original for reference
 const originalProcessMessageNotification = window.processMessageNotification;
+
+// Override with membership check
 window.processMessageNotification = async function(message) {
     console.log('📨 ========== processMessageNotification START ==========');
     console.log('📨 message:', message);
@@ -7569,20 +7642,30 @@ window.processMessageNotification = async function(message) {
         return;
     }
 
-    // Let the original handler do its thing (if it exists)
+    const serverId = message.server_id || 'public';
+    const msgUsername = message.username || 'anon';
+    const msgContent = message.message || message.content || '';
+
+    console.log(`📨 serverId: "${serverId}", currentServer: "${currentServer}", msgUsername: "${msgUsername}"`);
+
+    // --- CRITICAL FIX: ONLY process if user is a member of this server ---
+    if (serverId !== 'public') {
+        const isMember = isUserMemberOfServer(serverId);
+        if (!isMember) {
+            console.log(`⛔ User is NOT a member of server "${serverId}", skipping notification & unread`);
+            return;
+        }
+        console.log(`✅ User IS a member of server "${serverId}"`);
+    }
+
+    // Call original handler if it exists (preserves other logic)
     if (typeof originalProcessMessageNotification === 'function') {
         console.log('📨 Calling original processMessageNotification...');
         await originalProcessMessageNotification(message);
         console.log('📨 Original processMessageNotification finished.');
     }
 
-    const serverId = message.server_id || 'public';
-    const msgUsername = message.username || 'anon';
-    const msgContent = message.message || message.content || '';
-    console.log(`📨 serverId: "${serverId}", currentServer: "${currentServer}", msgUsername: "${msgUsername}"`);
-
     // Only process private server messages, not from current user
-    // REMOVED the "serverId !== currentServer" condition - now notifies even if on the same server!
     if (serverId !== 'public' && msgUsername !== currentUser?.username) {
         console.log('📨 ✅ Condition met for private server message.');
 
@@ -7608,13 +7691,11 @@ window.processMessageNotification = async function(message) {
             }
         }
 
-        // 2. ALWAYS show notification when tab is NOT active (even if on same server)
+        // 2. ALWAYS show notification when tab is NOT active
         if (typeof isTabActive !== 'undefined' && !isTabActive) {
-            console.log('📱 Tab is NOT active → showing alert and browser notification (even if on same server).');
-            // Show alert (like public)
+            console.log('📱 Tab is NOT active → showing alert and browser notification.');
             alert(`💬 ${msgUsername} @ ${serverName}:\n${msgContent.substring(0, 80)}`);
 
-            // Also try browser notification if permission granted
             if (typeof sendNotification === 'function') {
                 console.log('📨 Calling sendNotification...');
                 sendNotification(
@@ -7622,40 +7703,33 @@ window.processMessageNotification = async function(message) {
                     msgContent.substring(0, 120),
                     `dm-${serverId}`
                 );
-            } else {
-                console.warn('⚠️ sendNotification not available.');
             }
         } else {
-            console.log('📱 Tab is active → no alert/browser notification (matching public behavior).');
+            console.log('📱 Tab is active → no alert/browser notification');
         }
     } else {
         console.log('📨 ❌ Condition NOT met (serverId public or own message).');
-        if (serverId === 'public') console.log('   - serverId is public');
-        if (msgUsername === currentUser?.username) console.log('   - message is from current user');
     }
     console.log('📨 ========== processMessageNotification END ==========');
 };
 
-// ----- WRAP POLLING TO LOG -----
-const originalPollAllPrivateServersForNotifications = window.pollAllPrivateServersForNotifications;
-if (typeof originalPollAllPrivateServersForNotifications === 'function') {
-    window.pollAllPrivateServersForNotifications = async function() {
-        console.log('🔄 Polling all private servers...');
-        await originalPollAllPrivateServersForNotifications();
-        console.log('🔄 Polling finished.');
-    };
-}
-
-// ----- REALTIME SUBSCRIPTION (calls processMessageNotification) -----
+// ----- REALTIME SUBSCRIPTION WITH MEMBERSHIP CHECK -----
 const originalSubscribeRealtime = window.subscribeRealtime;
 window.subscribeRealtime = async function() {
     console.log('📡 Setting up main realtime subscription...');
     await originalSubscribeRealtime();
     console.log('📡 Main subscription set up.');
 
-    // Add our own unread‑channel that also triggers notifications
-    if (supabase && !window.unreadChannel) {
-        console.log('📡 Adding unread-channel for INSERT events...');
+    // Remove existing unread channel if it exists
+    if (window.unreadChannel) {
+        supabase.removeChannel(window.unreadChannel);
+        window.unreadChannel = null;
+        console.log('📡 Removed old unread-channel');
+    }
+
+    // Add our own unread‑channel with membership check
+    if (supabase) {
+        console.log('📡 Adding unread-channel for INSERT events with membership check...');
         window.unreadChannel = supabase.channel('unread-channel')
             .on('postgres_changes', {
                 event: 'INSERT',
@@ -7667,10 +7741,19 @@ window.subscribeRealtime = async function() {
                 const msgUsername = m.username || 'anon';
                 console.log(`📨 Realtime INSERT received: serverId="${serverId}", username="${msgUsername}"`);
 
+                // --- CRITICAL FIX: Skip if user is NOT a member of this private server ---
+                if (serverId !== 'public') {
+                    const isMember = isUserMemberOfServer(serverId);
+                    if (!isMember) {
+                        console.log(`⛔ Realtime: User NOT a member of server "${serverId}", skipping notification`);
+                        return;
+                    }
+                    console.log(`✅ Realtime: User IS a member of server "${serverId}"`);
+                }
+
                 // Only process private messages from other users
                 if (serverId !== 'public' && msgUsername !== currentUser?.username) {
                     console.log('📨 Calling processMessageNotification for this private message...');
-                    // Call our wrapper to handle notification
                     if (typeof window.processMessageNotification === 'function') {
                         window.processMessageNotification({
                             id: m.id,
@@ -7687,20 +7770,34 @@ window.subscribeRealtime = async function() {
                 }
             })
             .subscribe();
-        console.log('📡 unread-channel subscribed.');
+        console.log('📡 unread-channel subscribed with membership check.');
     } else {
-        console.log('📡 Skipped unread-channel: supabase not ready or already exists.');
+        console.log('📡 Skipped unread-channel: supabase not ready.');
     }
 };
 
-// ----- REFRESH BADGES AFTER SERVER LIST UPDATE -----
-const originalLoadServers = window.loadServers;
-window.loadServers = async function() {
-    console.log('📂 Loading servers...');
-    await originalLoadServers();
-    console.log('📂 Servers loaded. Updating badges...');
-    updateServerBadges();
-};
+// ----- POLLING WRAPPER WITH MEMBERSHIP CHECK -----
+const originalPollAllPrivateServersForNotifications = window.pollAllPrivateServersForNotifications;
+if (typeof originalPollAllPrivateServersForNotifications === 'function') {
+    window.pollAllPrivateServersForNotifications = async function() {
+        console.log('🔄 Polling all private servers with membership check...');
+        await originalPollAllPrivateServersForNotifications();
+        console.log('🔄 Polling finished.');
+    };
+}
+
+// ----- REFRESH MEMBERSHIPS PERIODICALLY -----
+function refreshMembershipsPeriodically() {
+    if (window.membershipRefreshInterval) {
+        clearInterval(window.membershipRefreshInterval);
+    }
+    window.membershipRefreshInterval = setInterval(async () => {
+        if (currentUser) {
+            console.log('🔄 Refreshing server memberships...');
+            await loadUserServerMemberships();
+        }
+    }, 60000); // Every minute
+}
 
 // ----- INIT AFTER LOGIN -----
 const originalProceedWithLogin = window.proceedWithLogin;
@@ -7708,12 +7805,17 @@ window.proceedWithLogin = function(username, isAdminUser, sessionToken) {
     console.log('🔐 Proceeding with login for:', username);
     originalProceedWithLogin(username, isAdminUser, sessionToken);
     setTimeout(() => {
-        console.log('🔐 Initializing badges...');
+        console.log('🔐 Initializing badges and memberships...');
+        loadUserServerMemberships();
         updateServerBadges();
         clearUnread(currentServer);
+        refreshMembershipsPeriodically();
         console.log('🔐 Badges initialized.');
     }, 1000);
 };
+
+console.log('✅ Fixed: Bell notifications now only appear for users who are members of the server.');
+console.log('📢 Membership check applied to realtime, polling, and notification functions.');
 
 // ----- HELPER: getServerName (fallback) -----
 if (typeof getServerName !== 'function') {
