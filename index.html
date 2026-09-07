@@ -8380,7 +8380,139 @@ window.proceedWithLogin = function (username, isAdmin, token) {
 };
 
 console.log('✅ Private-server sound + browser notification ready (tab-away only)');
+// =====================================================================
+// INDEPENDENT PRIVATE-SERVER NOTIFICATIONS (ULTRA-SAFE)
+// Tab-away works even on the same private server. No channel fights.
+// =====================================================================
+(function () {
+  'use strict';
 
+  function tabIsAway() { return document.hidden === true; }
+
+  function isMember(serverId) {
+    try {
+      if (!serverId || serverId === 'public' || !currentUser) return false;
+      if (typeof userServerMemberships !== 'undefined' && userServerMemberships.has(serverId)) return true;
+      if (servers?.[serverId]?.members?.includes(currentUser.username)) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function getName(serverId) {
+    try {
+      if (serverId === 'public') return 'Public Chat';
+      if (typeof getServerName === 'function') return getServerName(serverId);
+      return servers?.[serverId]?.name || 'Private Server';
+    } catch (e) {}
+    return 'Private Server';
+  }
+
+  function playSound() {
+    try {
+      const s = document.getElementById('newMessageSound');
+      if (s) { s.currentTime = 0; s.play().catch(() => {}); }
+    } catch (e) {}
+  }
+
+  function showNotif(serverId, username, message) {
+    try {
+      if (!tabIsAway()) return;
+      if (currentUser && username &&
+          String(username).toLowerCase() === String(currentUser.username).toLowerCase()) return;
+      if (!isMember(serverId)) return;
+
+      const title = '💬 ' + getName(serverId);
+      const body = message
+        ? (username || 'Someone') + ': ' + String(message).substring(0, 100)
+        : 'New message in private server';
+
+      playSound();
+
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const n = new Notification(title, {
+          body,
+          icon: 'https://res.cloudinary.com/dceqg5cky/image/upload/SDG_log-removebg-preview_bslq5d.png',
+          tag: 'priv-' + serverId,
+          silent: false
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+        setTimeout(() => { try { n.close(); } catch (e) {} }, 8000);
+      }
+    } catch (e) {}
+  }
+
+  let lastAttached = null;
+
+  function attachToLiveChannel() {
+    try {
+      if (typeof privateBroadcastChannel === 'undefined' || !privateBroadcastChannel) return;
+      if (!currentServer || currentServer === 'public') return;
+      if (lastAttached === privateBroadcastChannel) return;
+      lastAttached = privateBroadcastChannel;
+
+      privateBroadcastChannel.on('broadcast', { event: 'server_update' }, (payload) => {
+        try {
+          const d = payload?.payload || {};
+          showNotif(d.serverId || currentServer, d.username || 'Someone', d.message || '');
+        } catch (e) {}
+      });
+    } catch (e) {}
+  }
+
+  if (typeof showPrivateBrowserNotification === 'function') {
+    const _orig = showPrivateBrowserNotification;
+    showPrivateBrowserNotification = function (serverId, extra) {
+      try { _orig.apply(this, arguments); } catch (e) {}
+      try {
+        showNotif(serverId, extra?.username || 'Someone', extra?.message || '');
+      } catch (e) {}
+    };
+  }
+
+  const sel = document.getElementById('serverSelect');
+  if (sel) sel.addEventListener('change', () => setTimeout(attachToLiveChannel, 700));
+
+  if (typeof window.proceedWithLogin === 'function') {
+    const _origLogin = window.proceedWithLogin;
+    window.proceedWithLogin = function () {
+      _origLogin.apply(this, arguments);
+      setTimeout(() => {
+        if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+          try { Notification.requestPermission(); } catch (e) {}
+        }
+        setTimeout(attachToLiveChannel, 500);
+      }, 3000);
+    };
+  }
+
+  function wrapStart() {
+    if (typeof window.startPrivateRealtime === 'function') {
+      const o = window.startPrivateRealtime;
+      window.startPrivateRealtime = function () {
+        o.apply(this, arguments);
+        setTimeout(attachToLiveChannel, 400);
+      };
+    } else if (typeof startPrivateRealtime === 'function') {
+      const o = startPrivateRealtime;
+      startPrivateRealtime = function () {
+        o.apply(this, arguments);
+        setTimeout(attachToLiveChannel, 400);
+      };
+    }
+  }
+  wrapStart();
+
+  if (typeof currentUser !== 'undefined' && currentUser) {
+    setTimeout(attachToLiveChannel, 2500);
+  }
+
+  let tries = 0;
+  const iv = setInterval(() => {
+    tries++;
+    attachToLiveChannel();
+    if (tries >= 8) clearInterval(iv);
+  }, 2500);
+})();
 
 </script>
 
