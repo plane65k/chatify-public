@@ -8291,7 +8291,7 @@ function startBadgeListeners() {
           return;
         }
 
-        // 🔴 RED DOT: increment unread if not currently viewing
+                // 🔴 RED DOT: increment unread if not currently viewing
         if (sid !== currentServer) {
           console.log(`🔴 Adding red dot for ${sid}`);
           incrementUnread(sid);
@@ -8299,12 +8299,17 @@ function startBadgeListeners() {
           console.log(`✅ Currently viewing ${sid}, no red dot`);
         }
 
-        // 🔔 NOTIFICATION: sound + browser notification (only when tab is away)
-        // Pass the message content for the notification
-        showPrivateBrowserNotification(sid, {
-          message: message,
-          username: username
-        });
+        // 🔔 NOTIFICATION: only for OTHER servers.
+        // The current server is handled by attachToLiveChannel
+        // inside the IIFE — firing here too was causing the double.
+        if (sid !== currentServer) {
+          showPrivateBrowserNotification(sid, {
+            message: message,
+            username: username
+          });
+        } else {
+          console.log(`⏭️ Current server — skipping startBadgeListeners notification (IIFE handles it)`);
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -8505,10 +8510,10 @@ console.log('✅ Private-server sound + browser notification ready (tab-away onl
     } catch (e) {}
   }
 
-  if (typeof showPrivateBrowserNotification === 'function') {
-    const _orig = showPrivateBrowserNotification;
+   if (typeof showPrivateBrowserNotification === 'function') {
+    // Only route through showNotif — calling the original as well
+    // was firing a second browser notification for the same event.
     showPrivateBrowserNotification = function (serverId, extra) {
-      try { _orig.apply(this, arguments); } catch (e) {}
       try {
         showNotif(serverId, extra?.username || 'Someone', extra?.message || '');
       } catch (e) {}
