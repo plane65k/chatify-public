@@ -1587,7 +1587,8 @@ We may update these terms periodically. Continued use of the app after changes m
   <button id="profileBtn" class="button-clear" title="Set profile picture">Profile</button>
   <button id="toggleThemeBtn" class="button-clear" title="Toggle theme">Toggle Theme</button>
   <button id="palBtn" class="button-clear" title="PAL">PAL</button>
-  <button id="documentationBtn" class="button-clear" title="View Documentation">Documentation</button>
+  <button id="backgroundBtn" class="button-clear" title="Customize chat background">Background</button>
+<button id="documentationBtn" class="button-clear" title="View Documentation" style="display:none;"></button>
   <button id="usersBtn" class="button-clear" title="View Users">Users</button>
   <button id="dropBtn" class="button-clear" title="Drop™" onclick="window.open('https://plane65k.github.io/chatify-drop', '_blank')">Drop™</button>
   <button id="adminBtn" class="admin-panel-btn" style="display:none">Admin</button>
@@ -2927,6 +2928,265 @@ async function debugPrivateServer() {
   }
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ============================================================
+// CHAT BACKGROUND CUSTOMIZATION — CLEAN
+// ============================================================
+(function () {
+  'use strict';
+
+  const BACKGROUND_KEY = 'chatify_chat_background';
+  const IMGBB_KEY = '588cf67669e7952039431719ce76ff7d';
+
+  let injected = false;
+  let attempts = 0;
+  const MAX_ATTEMPTS = 40;
+
+  function buildButton() {
+    const btn = document.createElement('button');
+    btn.id = 'backgroundBtn';
+    btn.className = 'button-clear';
+    btn.title = 'Customize chat background';
+    btn.textContent = 'Background';
+    return btn;
+  }
+
+  function buildModal() {
+    if (document.getElementById('backgroundModal')) return;
+    const modal = document.createElement('div');
+    modal.id = 'backgroundModal';
+    modal.className = 'profile-modal';
+    modal.innerHTML = `
+      <div class="profile-modal-content" style="max-width:480px !important;width:92% !important;padding:20px !important;">
+        <h3 style="margin-top:0;">🎨 Customize Chat Background</h3>
+        <p style="font-size:12px;opacity:0.7;margin:0 0 12px 0;">
+          Set a custom background for your chat. Paste an image URL or upload an image.
+        </p>
+        <input type="text" id="backgroundUrlInput" placeholder="Enter image URL (https://...)"
+          style="width:100%;padding:10px 14px;border-radius:12px;border:1px solid var(--border-color);
+                 background:var(--secondary-background);color:var(--text-color);font-size:14px;
+                 box-sizing:border-box;margin-bottom:10px;" />
+        <div id="backgroundPreview"
+          style="display:none;width:100%;height:140px;border-radius:12px;
+                 border:1px solid var(--border-color);background-size:cover;
+                 background-position:center;margin-bottom:10px;"></div>
+        <button id="uploadBackgroundBtn"
+          style="width:100%;padding:10px;border-radius:12px;border:1px dashed var(--border-color);
+                 background:var(--secondary-background);color:var(--text-color);
+                 cursor:pointer;font-size:14px;margin-bottom:12px;">
+          📁 Upload Image (ImgBB)
+        </button>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button id="clearBackgroundBtn"
+            style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#333;
+                   cursor:pointer;font-weight:600;">Clear</button>
+          <button id="cancelBackgroundBtn"
+            style="padding:8px 16px;border-radius:8px;border:none;background:#ccc;color:#333;
+                   cursor:pointer;font-weight:600;">Cancel</button>
+          <button id="saveBackgroundBtn"
+            style="padding:8px 16px;border-radius:8px;border:none;
+                   background:var(--button-background);color:var(--button-text);
+                   cursor:pointer;font-weight:600;">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  function tryInject() {
+    attempts++;
+    if (document.getElementById('backgroundBtn')) { injected = true; return true; }
+    buildModal();
+    const headerActions = document.querySelector('.header-actions');
+    if (headerActions) {
+      headerActions.appendChild(buildButton());
+      injected = true;
+      return true;
+    }
+    return false;
+  }
+
+  function startRetrying() {
+    const interval = setInterval(() => {
+      if (tryInject()) { clearInterval(interval); return; }
+      if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(interval);
+        if (!document.getElementById('backgroundBtn')) {
+          const btn = buildButton();
+          btn.style.cssText = `
+            position: fixed; bottom: 80px; right: 20px; z-index: 9999;
+            background: var(--button-background, #4caf50); color: white;
+            padding: 10px 16px; border-radius: 30px; border: none;
+            font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+          `;
+          document.body.appendChild(btn);
+        }
+      }
+    }, 500);
+    tryInject();
+    if (injected) clearInterval(interval);
+  }
+
+  function wireModal() {
+    const modal = document.getElementById('backgroundModal');
+    const input = document.getElementById('backgroundUrlInput');
+    const preview = document.getElementById('backgroundPreview');
+    const uploadBtn = document.getElementById('uploadBackgroundBtn');
+    const cancelBtn = document.getElementById('cancelBackgroundBtn');
+    const clearBtn = document.getElementById('clearBackgroundBtn');
+    const saveBtn = document.getElementById('saveBackgroundBtn');
+    const chatApp = document.getElementById('chatApp');
+
+    if (!modal || !input || !chatApp) return;
+
+    function apply(url) {
+      if (url) {
+        chatApp.style.setProperty('background', `url('${url}') center/cover no-repeat fixed`, 'important');
+      } else {
+        chatApp.style.removeProperty('background');
+      }
+    }
+
+    const saved = localStorage.getItem(BACKGROUND_KEY);
+    if (saved) apply(saved);
+
+    function updatePreview() {
+      const url = input.value.trim();
+      if (url) {
+        preview.style.backgroundImage = `url('${url}')`;
+        preview.style.display = 'block';
+      } else {
+        preview.style.backgroundImage = 'none';
+        preview.style.display = 'none';
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('#backgroundBtn')) {
+        e.stopPropagation();
+        input.value = localStorage.getItem(BACKGROUND_KEY) || '';
+        updatePreview();
+        modal.style.display = 'flex';
+      }
+    });
+
+    input.addEventListener('input', updatePreview);
+    cancelBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+
+    clearBtn.addEventListener('click', () => {
+      localStorage.removeItem(BACKGROUND_KEY);
+      apply('');
+      input.value = '';
+      updatePreview();
+      if (typeof showNotifyBanner === 'function') showNotifyBanner('Background cleared');
+      modal.style.display = 'none';
+    });
+
+    saveBtn.addEventListener('click', () => {
+      const url = input.value.trim();
+      if (url) {
+        try { new URL(url); }
+        catch { if (typeof showNotifyBanner === 'function') showNotifyBanner('Invalid URL'); return; }
+        localStorage.setItem(BACKGROUND_KEY, url);
+        apply(url);
+        if (typeof showNotifyBanner === 'function') showNotifyBanner('✅ Background saved!');
+      } else {
+        localStorage.removeItem(BACKGROUND_KEY);
+        apply('');
+        if (typeof showNotifyBanner === 'function') showNotifyBanner('Background cleared');
+      }
+      modal.style.display = 'none';
+    });
+
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    uploadBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        if (typeof showNotifyBanner === 'function') showNotifyBanner('Image too large (max 10MB)');
+        fileInput.value = '';
+        return;
+      }
+      const orig = uploadBtn.textContent;
+      uploadBtn.textContent = '⏳ Uploading...';
+      uploadBtn.disabled = true;
+      try {
+        const reader = new FileReader();
+        const base64 = await new Promise((res, rej) => {
+          reader.onload = () => res(reader.result.split(',')[1]);
+          reader.onerror = rej;
+          reader.readAsDataURL(file);
+        });
+        const fd = new FormData();
+        fd.append('key', IMGBB_KEY);
+        fd.append('image', base64);
+        const r = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (j.success) {
+          input.value = j.data.url;
+          updatePreview();
+          if (typeof showNotifyBanner === 'function') showNotifyBanner('✅ Uploaded! Click Save.');
+        } else {
+          if (typeof showNotifyBanner === 'function') showNotifyBanner('❌ Upload failed');
+        }
+      } catch (err) {
+        if (typeof showNotifyBanner === 'function') showNotifyBanner('❌ Upload failed: ' + err.message);
+      } finally {
+        uploadBtn.textContent = orig;
+        uploadBtn.disabled = false;
+        fileInput.value = '';
+      }
+    });
+  }
+
+  function init() {
+    buildModal();
+    startRetrying();
+    wireModal();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  window.addEventListener('load', () => tryInject());
+})();
 // Run this in console to test: debugPrivateServer()
 
 
