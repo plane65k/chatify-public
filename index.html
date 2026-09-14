@@ -5912,12 +5912,71 @@ saveProfileBtn.addEventListener('click', async () => {
 
 
 /* ==== Notifications (animated banner) ==== */
+/* ==== Notifications (animated banner) ==== */
 let bannerTimer = null;
 function showNotifyBanner(text){
+  const header = document.querySelector('header');
+  const notifyBanner = document.getElementById('notifyBanner');
+
+  if (!header || !notifyBanner) {
+    console.warn('showNotifyBanner: header or notifyBanner element missing.');
+    return;
+  }
+
+  // Clear any existing timer
+  if (bannerTimer) clearTimeout(bannerTimer);
+
+  // Set text and prepare for animation
   notifyBanner.textContent = text;
   notifyBanner.style.display = 'block';
-  if(bannerTimer) clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(()=> notifyBanner.style.display = 'none', 9000);
+
+  // Function to position the banner (only top and left, transform handled separately)
+  const positionBanner = () => {
+    const headerRect = header.getBoundingClientRect();
+    notifyBanner.style.top = `${headerRect.bottom + 8}px`;
+    notifyBanner.style.left = '50%';
+    notifyBanner.style.right = 'auto';
+  };
+
+  // Initial position
+  positionBanner();
+
+  // Reset to dot state (no transition) to restart animation each time
+  notifyBanner.style.transition = 'none';
+  notifyBanner.style.transform = 'translateX(-50%) scale(0)';
+  notifyBanner.style.opacity = '0';
+
+  // Force reflow so the browser acknowledges the starting state
+  void notifyBanner.offsetWidth;
+
+  // Animate to full rounded rectangle
+  notifyBanner.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out';
+  notifyBanner.style.transform = 'translateX(-50%) scale(1)';
+  notifyBanner.style.opacity = '1';
+
+  // Reposition if the header size changes (e.g., due to scrolling)
+  const resizeObserver = new ResizeObserver(() => {
+    const headerRect = header.getBoundingClientRect();
+    notifyBanner.style.top = `${headerRect.bottom + 8}px`;
+    notifyBanner.style.left = '50%';
+  });
+  resizeObserver.observe(header);
+
+  // Add click-to-dismiss functionality
+  const dismissHandler = () => {
+    notifyBanner.style.display = 'none';
+    if (bannerTimer) clearTimeout(bannerTimer);
+    resizeObserver.disconnect();
+    notifyBanner.removeEventListener('click', dismissHandler);
+  };
+  notifyBanner.addEventListener('click', dismissHandler);
+
+  // Auto-hide after 9 seconds
+  bannerTimer = setTimeout(() => {
+    notifyBanner.style.display = 'none';
+    resizeObserver.disconnect();
+    notifyBanner.removeEventListener('click', dismissHandler);
+  }, 9000);
 }
 
 /* ==== Other UI controls ==== */
@@ -8924,8 +8983,120 @@ imageFileInput.addEventListener('change', async (e) => {
 
 
 
+
+
+
+
+
+
+// ============================================================
+// PUBLIC-MESSAGE BANNER  (v6 — silent)
+// Only fires showNotifyBanner() when you're in a private server
+// and a new public message arrives. Nothing else is called.
+// ============================================================
+(function () {
+  'use strict';
+
+  function sb() {
+    return window.mySupabase
+        || window.supabaseGlobal
+        || (typeof supabase !== 'undefined' ? supabase : null);
+  }
+  function tbl() {
+    try { if (typeof TABLE !== 'undefined' && TABLE) return TABLE; } catch (e) {}
+    return 'messages';
+  }
+
+  function isMe(username) {
+    try {
+      return currentUser && username &&
+        String(username).toLowerCase() === String(currentUser.username).toLowerCase();
+    } catch (e) { return false; }
+  }
+
+  // 5-second dedupe
+  const shownKeys = new Map();
+  function shouldShow(key) {
+    const now = Date.now();
+    for (const [k, t] of shownKeys) if (now - t > 5000) shownKeys.delete(k);
+    if (shownKeys.has(key)) return false;
+    shownKeys.set(key, now);
+    return true;
+  }
+
+  function fire(username, text) {
+    try {
+      if (typeof currentUser === 'undefined' || !currentUser) return;
+      if (currentServer === 'public') return;
+      if (isMe(username)) return;
+
+      const key = `${username}|${String(text || '').slice(0, 60)}`;
+      if (!shouldShow(key)) return;
+
+      const preview = String(text || '').length > 120
+        ? String(text).substring(0, 117) + '...'
+        : String(text || '');
+
+      if (typeof showNotifyBanner === 'function') {
+        showNotifyBanner(`📨 Public Chat • ${username || 'anon'}: ${preview}`);
+      }
+    } catch (e) {}
+  }
+
+  let bannerChannel = null;
+
+  function start() {
+    const client = sb();
+    if (!client || typeof client.channel !== 'function') return;
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+
+    if (bannerChannel) {
+      try { client.removeChannel(bannerChannel); } catch (e) {}
+      bannerChannel = null;
+    }
+
+    try {
+      bannerChannel = client
+        .channel('banner-public-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8))
+        .on('postgres_changes',
+            { event: 'INSERT', schema: 'public', table: tbl() },
+            (payload) => {
+              const m = payload?.new || {};
+              if ((m.server_id || 'public') !== 'public') return;
+              fire(m.username, m.content || m.message || m.text || '');
+            })
+        .subscribe();
+    } catch (e) {}
+  }
+
+  if (typeof window.subscribeRealtime === 'function') {
+    const _o = window.subscribeRealtime;
+    window.subscribeRealtime = async function () {
+      const out = await _o.apply(this, arguments);
+      start();
+      return out;
+    };
+  }
+
+  if (typeof window.proceedWithLogin === 'function') {
+    const _o = window.proceedWithLogin;
+    window.proceedWithLogin = function () {
+      const out = _o.apply(this, arguments);
+      setTimeout(start, 2500);
+      return out;
+    };
+  }
+
+  const sel = document.getElementById('serverSelect');
+  if (sel) sel.addEventListener('change', () => setTimeout(start, 400));
+
+  setTimeout(() => {
+    if (typeof currentUser !== 'undefined' && currentUser) start();
+  }, 3000);
+})();
 </script>
 
 
 </body>
 </html>
+
