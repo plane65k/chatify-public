@@ -9094,9 +9094,182 @@ imageFileInput.addEventListener('change', async (e) => {
     if (typeof currentUser !== 'undefined' && currentUser) start();
   }, 3000);
 })();
+
+
+
+
+
+/* =========================================================
+   GHOST (OPTIMISTIC) MESSAGE PREVIEW
+   - Shows a semi-transparent copy of your message instantly
+   - Removes it automatically when the real message appears
+   - Also removes it after 20s if sending fails silently
+   ========================================================= */
+(function () {
+  'use strict';
+
+  // ---- Styles ----
+  const style = document.createElement('style');
+  style.textContent = `
+    .ghost-message {
+      opacity: 0.55 !important;
+      animation: ghostPulse 1.4s ease-in-out infinite;
+      pointer-events: none;
+    }
+    .ghost-message .timestamp::after {
+      content: '  · sending';
+      font-style: italic;
+      opacity: 0.8;
+    }
+    @keyframes ghostPulse {
+      0%,100% { opacity: 0.55; }
+      50%     { opacity: 0.35; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  // ---- State ----
+  const ghostQueue = [];   // { el, text, addedAt }
+
+  function getChat() {
+    return document.getElementById('chat');
+  }
+
+  function buildGhost(text) {
+    const el = document.createElement('div');
+    el.className = 'message myMessage ghost-message';
+    el.dataset.ghost = 'true';
+
+    const pic =
+      (typeof userProfiles !== 'undefined' && currentUser && userProfiles[currentUser.username]) ||
+      'https://www.thisiscolossal.com/wp-content/uploads/2024/01/spherewave.gif';
+
+    const safeUser = (typeof escapeHtml === 'function')
+      ? escapeHtml(currentUser.username)
+      : currentUser.username;
+    const safeText = (typeof escapeHtml === 'function')
+      ? escapeHtml(text)
+      : text;
+
+    el.innerHTML = `
+      <div style="display:flex;align-items:flex-start;gap:10px;width:100%;">
+        <img src="${pic}" alt="pfp"
+          style="width:30px;height:30px;border-radius:50%;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:4px;">
+            <strong style="flex-shrink:0;">${safeUser}</strong>
+            <div style="min-width:0;">${safeText}</div>
+          </div>
+          <div class="timestamp"></div>
+        </div>
+      </div>`;
+    return el;
+  }
+
+  function addGhost(text) {
+    if (!text) return;
+    if (typeof currentUser === 'undefined' || !currentUser) return;
+
+    const chat = getChat();
+    if (!chat) return;
+
+    const el = buildGhost(text);
+    chat.appendChild(el);
+    chat.scrollTop = chat.scrollHeight;
+
+    ghostQueue.push({ el, text, addedAt: Date.now() });
+  }
+
+  function removeGhostEntry(entry, instant) {
+    if (!entry || !entry.el) return;
+    const el = entry.el;
+    if (!el.parentNode) return;
+
+    if (instant) {
+      el.remove();
+    } else {
+      el.style.transition = 'opacity 0.18s ease';
+      el.style.opacity = '0';
+      setTimeout(() => el.remove(), 200);
+    }
+  }
+
+  // Match a newly-rendered own-message to the oldest ghost with same text
+  function resolveGhostFor(text) {
+    if (ghostQueue.length === 0) return;
+    // Prefer exact text match; fallback to oldest ghost
+    let idx = ghostQueue.findIndex(g => g.text === text);
+    if (idx === -1) idx = 0;
+    const [entry] = ghostQueue.splice(idx, 1);
+    removeGhostEntry(entry, true);
+  }
+
+  // ---- Capture-phase listeners: fire BEFORE sendMessage() ----
+  const sendBtn      = document.getElementById('sendBtn');
+  const messageInput = document.getElementById('messageInput');
+
+  if (sendBtn) {
+    sendBtn.addEventListener('click', () => {
+      const text = (messageInput.value || '').trim();
+      if (text) addGhost(text);
+    }, true);
+  }
+
+  if (messageInput) {
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const text = (messageInput.value || '').trim();
+        if (text) addGhost(text);
+      }
+    }, true);
+  }
+
+  // ---- Watch the chat for the REAL message, then kill the ghost ----
+  const chat = getChat();
+  if (chat) {
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.dataset && node.dataset.ghost === 'true') continue;
+          if (!node.classList || !node.classList.contains('message')) continue;
+          if (!node.classList.contains('myMessage')) continue; // only own msgs
+          if (ghostQueue.length === 0) continue;
+
+          // Try to find matching text
+          let text = '';
+          try {
+            const contentDiv = node.querySelector('div[style*="min-width:0"] > div, div > div > div');
+            text = (contentDiv && contentDiv.textContent) ? contentDiv.textContent.trim() : '';
+          } catch (e) {}
+          resolveGhostFor(text);
+        }
+      }
+    });
+    observer.observe(chat, { childList: true });
+  }
+
+  // ---- Safety net: drop ghosts older than 20s ----
+  setInterval(() => {
+    const now = Date.now();
+    for (let i = ghostQueue.length - 1; i >= 0; i--) {
+      const g = ghostQueue[i];
+      if (!g.el.parentNode || now - g.addedAt > 20000) {
+        removeGhostEntry(g, true);
+        ghostQueue.splice(i, 1);
+      }
+    }
+  }, 3000);
+
+  // ---- If the chat is wiped (server switch / refresh), forget ghosts ----
+  window.addEventListener('chatify:chatCleared', () => {
+    ghostQueue.length = 0;
+  });
+
+  console.log('✅ Ghost message preview installed');
+})();
 </script>
 
 
 </body>
 </html>
-
