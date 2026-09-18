@@ -9268,6 +9268,175 @@ imageFileInput.addEventListener('change', async (e) => {
 
   console.log('✅ Ghost message preview installed');
 })();
+
+
+
+
+
+
+
+
+/* =========================================================
+   EMOJI PICKER UPGRADE
+   - Grid layout
+   - Type/paste custom emoji
+   ========================================================= */
+(function () {
+  'use strict';
+
+  const EXTRA_EMOJIS = [
+   
+    '✌️','💩','🇮🇱','👊'
+  ];
+
+  const style = document.createElement('style');
+  style.textContent = `
+    .custom-emoji-picker-container {
+      flex-direction: column !important;
+      width: 280px !important;
+      max-width: 92vw !important;
+      padding: 10px !important;
+      gap: 8px !important;
+      border-radius: 16px !important;
+      align-items: stretch !important;
+      bottom: auto !important;
+      top: calc(100% + 6px) !important;
+      right: 10px !important;
+    }
+    .custom-emoji-grid {
+      display: grid !important;
+      grid-template-columns: repeat(6, 1fr) !important;
+      gap: 4px !important;
+      width: 100% !important;
+    }
+    .custom-emoji-grid > span {
+      width: 100% !important;
+      aspect-ratio: 1 / 1 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      font-size: 20px !important;
+      border-radius: 8px !important;
+      cursor: pointer !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      user-select: none !important;
+      transition: background 0.15s, transform 0.15s !important;
+    }
+    .custom-emoji-grid > span:hover {
+      background: var(--secondary-background) !important;
+      transform: scale(1.15) !important;
+    }
+    .custom-emoji-input {
+      width: 100% !important;
+      padding: 8px 12px !important;
+      border-radius: 10px !important;
+      border: 1px solid var(--border-color) !important;
+      background: var(--secondary-background) !important;
+      color: var(--text-color) !important;
+      font-size: 14px !important;
+      box-sizing: border-box !important;
+      outline: none !important;
+      font-family: inherit !important;
+    }
+    .custom-emoji-input:focus {
+      border-color: var(--button-background) !important;
+      box-shadow: 0 0 0 3px rgba(76,175,80,0.15) !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+  function submitEmoji(picker, emoji) {
+    const msgEl = picker.closest('.message');
+    const msgId = msgEl ? msgEl.dataset.id : null;
+    if (!msgId || !emoji) return;
+
+    if (typeof currentServer !== 'undefined' && currentServer === 'public') {
+      if (typeof addReaction === 'function') addReaction(msgId, emoji);
+    } else {
+      if (typeof addPrivateReaction === 'function') {
+        addPrivateReaction(msgId, emoji);
+      } else if (typeof addReaction === 'function') {
+        addReaction(msgId, emoji);
+      }
+    }
+    picker.style.display = 'none';
+  }
+
+  function enhancePicker(picker) {
+    if (!picker || picker.dataset.enhanced === 'true') return;
+    picker.dataset.enhanced = 'true';
+
+    const grid = document.createElement('div');
+    grid.className = 'custom-emoji-grid';
+    while (picker.firstChild) grid.appendChild(picker.firstChild);
+
+    EXTRA_EMOJIS.forEach(emoji => {
+      const span = document.createElement('span');
+      span.textContent = emoji;
+      span.addEventListener('click', (e) => {
+        e.stopPropagation();
+        submitEmoji(picker, emoji);
+      });
+      grid.appendChild(span);
+    });
+
+    picker.appendChild(grid);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'custom-emoji-input';
+    input.placeholder = 'Type or paste emoji + Enter';
+    input.maxLength = 8;
+
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('mousedown', (e) => e.stopPropagation());
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const raw = input.value.trim();
+        if (!raw) return;
+        const emoji = Array.from(raw)[0];
+        input.value = '';
+        submitEmoji(picker, emoji);
+      }
+    });
+
+    picker.appendChild(input);
+  }
+
+  function scanAll() {
+    document.querySelectorAll('.custom-emoji-picker-container')
+      .forEach(enhancePicker);
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.classList &&
+            node.classList.contains('custom-emoji-picker-container')) {
+          enhancePicker(node);
+        } else if (node.querySelectorAll) {
+          node.querySelectorAll('.custom-emoji-picker-container')
+            .forEach(enhancePicker);
+        }
+      }
+    }
+  });
+
+  function start() {
+    observer.observe(document.body, { childList: true, subtree: true });
+    scanAll();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
 </script>
 
 
