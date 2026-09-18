@@ -9437,6 +9437,58 @@ imageFileInput.addEventListener('change', async (e) => {
     start();
   }
 })();
+
+
+
+
+
+
+// ============================================================
+// UNIFIED REACTION LOGIC — private servers use addReaction()
+// ============================================================
+(function () {
+  'use strict';
+
+  // Wait until all hoisted function declarations exist
+  function installOverride() {
+    if (typeof addReaction !== 'function' || typeof addPrivateReaction !== 'function') {
+      return false;
+    }
+
+    // Save the old implementation as a fallback (optional)
+    const _origAddPrivateReaction = addPrivateReaction;
+
+    // Override the global name. Both call sites resolve this at
+    // click-time, so this catches:
+    //   1) the reaction-pill click handler inside renderOneMessage()
+    //   2) submitEmoji() from the emoji-picker-upgrade patch
+    addPrivateReaction = async function (messageId, emoji) {
+      
+      try {
+        return await addReaction(messageId, emoji);
+      } catch (err) {
+        console.error('Unified addReaction failed, falling back:', err);
+        if (typeof _origAddPrivateReaction === 'function') {
+          return _origAddPrivateReaction(messageId, emoji);
+        }
+      }
+    };
+
+    
+    return true;
+  }
+
+  if (!installOverride()) {
+    // Function declarations are hoisted, so this should normally succeed
+    // immediately — but keep a short retry in case of ordering quirks.
+    let tries = 0;
+    const iv = setInterval(() => {
+      tries++;
+      if (installOverride() || tries > 20) clearInterval(iv);
+    }, 50);
+  }
+})();
+
 </script>
 
 
