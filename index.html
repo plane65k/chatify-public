@@ -9285,28 +9285,40 @@ imageFileInput.addEventListener('change', async (e) => {
   'use strict';
 
   const EXTRA_EMOJIS = [
-   
     '✌️','💩','🇮🇱','👊'
   ];
 
   const style = document.createElement('style');
   style.textContent = `
     .custom-emoji-picker-container {
-      flex-direction: column !important;
-      width: 280px !important;
-      max-width: 92vw !important;
-      padding: 10px !important;
-      gap: 8px !important;
-      border-radius: 16px !important;
-      align-items: stretch !important;
+      position: absolute !important;
+      top: 0 !important;
       bottom: auto !important;
-      top: calc(100% + 6px) !important;
-      right: 10px !important;
+      flex-direction: column !important;
+      width: 190px !important;
+      max-width: 60vw !important;
+      padding: 8px !important;
+      gap: 6px !important;
+      border-radius: 14px !important;
+      align-items: stretch !important;
+      z-index: 100 !important;
+    }
+    /* Picker sits to the LEFT of your own messages */
+    .myMessage .custom-emoji-picker-container {
+      right: 100% !important;
+      left: auto !important;
+      margin-right: 8px !important;
+    }
+    /* Picker sits to the RIGHT of other people's messages */
+    .otherMessage .custom-emoji-picker-container {
+      left: 100% !important;
+      right: auto !important;
+      margin-left: 8px !important;
     }
     .custom-emoji-grid {
       display: grid !important;
-      grid-template-columns: repeat(6, 1fr) !important;
-      gap: 4px !important;
+      grid-template-columns: repeat(5, 1fr) !important;
+      gap: 3px !important;
       width: 100% !important;
     }
     .custom-emoji-grid > span {
@@ -9315,8 +9327,8 @@ imageFileInput.addEventListener('change', async (e) => {
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
-      font-size: 20px !important;
-      border-radius: 8px !important;
+      font-size: 16px !important;
+      border-radius: 6px !important;
       cursor: pointer !important;
       padding: 0 !important;
       margin: 0 !important;
@@ -9329,12 +9341,12 @@ imageFileInput.addEventListener('change', async (e) => {
     }
     .custom-emoji-input {
       width: 100% !important;
-      padding: 8px 12px !important;
-      border-radius: 10px !important;
+      padding: 6px 8px !important;
+      border-radius: 8px !important;
       border: 1px solid var(--border-color) !important;
       background: var(--secondary-background) !important;
       color: var(--text-color) !important;
-      font-size: 14px !important;
+      font-size: 12px !important;
       box-sizing: border-box !important;
       outline: none !important;
       font-family: inherit !important;
@@ -9386,7 +9398,7 @@ imageFileInput.addEventListener('change', async (e) => {
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'custom-emoji-input';
-    input.placeholder = 'Type or paste emoji + Enter';
+    input.placeholder = 'Emoji + Enter';
     input.maxLength = 8;
 
     input.addEventListener('click', (e) => e.stopPropagation());
@@ -9437,8 +9449,6 @@ imageFileInput.addEventListener('change', async (e) => {
     start();
   }
 })();
-
-
 
 
 
