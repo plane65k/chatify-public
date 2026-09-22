@@ -9499,6 +9499,317 @@ imageFileInput.addEventListener('change', async (e) => {
   }
 })();
 
+
+
+
+
+
+
+(function () {
+  'use strict';
+
+  const ANNOUNCE_SERVER_NAME = 'announce';
+  const EDGE_URL = 'https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/announcement';
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzcGx2ZXhlcXNicnNncmZjem9nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0Mzk5OTksImV4cCI6MjA3NzAxNTk5OX0.QJV9XLvzoIPr1rE4LK4XOEoOAu-YCTQ-wkatNcqwlwE";
+
+  // ---------- Banner UI (red pill, same look as notify banner) ----------
+  function ensureBanner() {
+    let el = document.getElementById('announcementBanner');
+    if (el) return el;
+
+    el = document.createElement('div');
+    el.id = 'announcementBanner';
+    el.style.cssText = `
+      position: fixed;
+      left: 50%;
+      top: 100px;
+      background: linear-gradient(90deg, #dc2626, #7f1d1d);
+      color: #ffffff;
+      padding: 12px 22px;
+      border-radius: 999px;
+      box-shadow: 0 12px 30px rgba(220, 38, 38, 0.45);
+      z-index: 19999;
+      display: none;
+      max-width: min(90vw, 720px);
+      font-family: 'Poppins', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+      text-align: center;
+      word-break: break-word;
+      transform: translateX(-50%) scale(0);
+      opacity: 0;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.15);
+    `;
+    el.title = 'Click to dismiss locally';
+    el.addEventListener('click', () => {
+      // Local dismiss — other users still see it until /remove
+      hideBanner();
+    });
+    document.body.appendChild(el);
+    return el;
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
+  }
+
+  // Position under the header, same as notify banner
+  function positionBanner(el) {
+    const header = document.querySelector('header');
+    if (!header) return;
+    const rect = header.getBoundingClientRect();
+    el.style.top = (rect.bottom + 8) + 'px';
+    el.style.left = '50%';
+  }
+
+  function showBanner(content) {
+    const el = ensureBanner();
+    el.innerHTML = `📢 Announcement: ${escapeHtml(content)}`;
+
+    positionBanner(el);
+
+    // Reset animation state, then pop in like notify banner
+    el.style.display = 'block';
+    el.style.transition = 'none';
+    el.style.transform = 'translateX(-50%) scale(0)';
+    el.style.opacity = '0';
+    void el.offsetWidth;
+
+    el.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out';
+    el.style.transform = 'translateX(-50%) scale(1)';
+    el.style.opacity = '1';
+
+    // Reposition if header resizes (scroll collapse etc.)
+    if (!el.__ro) {
+      el.__ro = new ResizeObserver(() => positionBanner(el));
+      const header = document.querySelector('header');
+      if (header) el.__ro.observe(header);
+    }
+  }
+
+  function hideBanner() {
+    const el = document.getElementById('announcementBanner');
+    if (!el) return;
+    el.style.transition = 'transform 0.2s ease-in, opacity 0.2s ease-in';
+    el.style.transform = 'translateX(-50%) scale(0)';
+    el.style.opacity = '0';
+    setTimeout(() => { el.style.display = 'none'; }, 200);
+  }
+
+  // ---------- Supabase client helper ----------
+  function getClient() {
+    return window.mySupabase
+        || window.supabaseGlobal
+        || (typeof supabase !== 'undefined' ? supabase : null);
+  }
+
+  // ---------- Realtime subscription ----------
+  let announceChannel = null;
+  let lastShownKey = null;
+
+  function startAnnouncementChannel() {
+    const client = getClient();
+    if (!client) return false;
+
+    if (announceChannel) {
+      try { client.removeChannel(announceChannel); } catch (e) {}
+      announceChannel = null;
+    }
+
+    announceChannel = client
+      .channel('announcements-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8))
+      .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'announcements' },
+          (payload) => {
+            if (payload.eventType === 'DELETE') {
+              hideBanner();
+              lastShownKey = null;
+              return;
+            }
+            const row = payload.new;
+            if (!row || !row.content) return;
+            const key = row.id + '|' + row.created_at;
+            if (key === lastShownKey) return;
+            lastShownKey = key;
+            showBanner(row.content);
+          })
+      .subscribe();
+    return true;
+  }
+
+  // ---------- Load current announcement on page load ----------
+  async function loadCurrentAnnouncement() {
+    const client = getClient();
+    if (!client) return;
+    try {
+      const { data, error } = await client
+        .from('announcements')
+        .select('*')
+        .eq('id', 'current')
+        .maybeSingle();
+      if (error || !data || !data.content) return;
+      lastShownKey = data.id + '|' + data.created_at;
+      showBanner(data.content);
+    } catch (e) {
+      console.warn('Announcement fetch failed:', e);
+    }
+  }
+
+  // ---------- Is the current server "announce"? ----------
+  function isAnnounceServer(serverId) {
+    if (!serverId || serverId === 'public') return false;
+    if (typeof servers === 'undefined' || !servers) return false;
+    const s = servers[serverId];
+    if (!s) return false;
+    return String(s.name || '').trim().toLowerCase() === ANNOUNCE_SERVER_NAME;
+  }
+
+  // ---------- Edge function call (with auth headers) ----------
+  async function callAnnouncementEdge(action, content) {
+    const sessionToken =
+      localStorage.getItem('chatSession') ||
+      sessionStorage.getItem('chatSession');
+    if (!sessionToken) {
+      console.warn('📢 No session token, cannot call announcement edge');
+      return null;
+    }
+    try {
+      const resp = await fetch(EDGE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'X-Session-Token': sessionToken
+        },
+        body: JSON.stringify({ action, content })
+      });
+      const result = await resp.json();
+      console.log('📢 Announcement edge response:', resp.status, result);
+      return result;
+    } catch (e) {
+      console.error('📢 Announcement edge failed:', e);
+      return null;
+    }
+  }
+
+  // ---------- Hook into send interactions ----------
+  let pendingText = null;
+  let pendingTimer = null;
+
+  function queueAnnouncement(text) {
+    if (!text) return;
+    pendingText = text;
+    if (pendingTimer) clearTimeout(pendingTimer);
+
+    pendingTimer = setTimeout(async () => {
+      const t = pendingText;
+      pendingText = null;
+      pendingTimer = null;
+      if (!t) return;
+
+      if (t === '/remove') {
+        const r = await callAnnouncementEdge('remove');
+        if (r && r.success) {
+          hideBanner();
+          if (typeof showNotifyBanner === 'function')
+            showNotifyBanner('📢 Announcement removed');
+        } else if (r && r.error) {
+          if (typeof showNotifyBanner === 'function')
+            showNotifyBanner('❌ ' + r.error);
+        }
+      } else if (!t.startsWith('/')) {
+        const r = await callAnnouncementEdge('set', t);
+        if (r && r.success) {
+          console.log('📢 Announcement posted');
+        } else if (r && r.error) {
+          if (typeof showNotifyBanner === 'function')
+            showNotifyBanner('❌ ' + r.error);
+        }
+      }
+    }, 800);
+  }
+
+  function attachInputListeners() {
+    const sendBtnEl = document.getElementById('sendBtn');
+    const inputEl = document.getElementById('messageInput');
+
+    if (sendBtnEl && !sendBtnEl.dataset.announceHooked) {
+      sendBtnEl.dataset.announceHooked = 'true';
+      sendBtnEl.addEventListener('click', () => {
+        if (!isAnnounceServer(typeof currentServer !== 'undefined' ? currentServer : null)) return;
+        const t = (inputEl && inputEl.value || '').trim();
+        if (t) queueAnnouncement(t);
+      }, true);
+    }
+
+    if (inputEl && !inputEl.dataset.announceHooked) {
+      inputEl.dataset.announceHooked = 'true';
+      inputEl.addEventListener('keypress', (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        if (!isAnnounceServer(typeof currentServer !== 'undefined' ? currentServer : null)) return;
+        const t = (inputEl.value || '').trim();
+        if (t) queueAnnouncement(t);
+      }, true);
+    }
+  }
+
+  // ---------- Bootstrap ----------
+  function bootstrap() {
+    ensureBanner();
+    attachInputListeners();
+
+    let tries = 0;
+    const iv = setInterval(async () => {
+      tries++;
+      const client = getClient();
+      if (client) {
+        clearInterval(iv);
+        startAnnouncementChannel();
+        await loadCurrentAnnouncement();
+        console.log('📢 Announcement system v2 ready');
+      }
+      if (tries > 60) clearInterval(iv);
+    }, 500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  } else {
+    bootstrap();
+  }
+
+  // Re-init after login
+  if (typeof window.proceedWithLogin === 'function') {
+    const _o = window.proceedWithLogin;
+    window.proceedWithLogin = function () {
+      const r = _o.apply(this, arguments);
+      setTimeout(async () => {
+        startAnnouncementChannel();
+        await loadCurrentAnnouncement();
+      }, 3500);
+      return r;
+    };
+  }
+
+  // Debug helpers
+  window.__announcementDebug = {
+    show: (text) => showBanner(text),
+    hide: hideBanner,
+    reload: loadCurrentAnnouncement,
+    set: (text) => callAnnouncementEdge('set', text),
+    remove: () => callAnnouncementEdge('remove')
+  };
+
+  console.log('📢 Announcement system v2 loaded. window.__announcementDebug for testing.');
+})();
+
 </script>
 
 
