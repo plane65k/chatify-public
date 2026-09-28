@@ -9810,6 +9810,205 @@ imageFileInput.addEventListener('change', async (e) => {
   console.log('📢 Announcement system v2 loaded. window.__announcementDebug for testing.');
 })();
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ============================================================
+//  /ai COMMAND → ROBOT BOT  (isolated dispatcher)
+//  sendMessage() delegates to handleAiCommand() and returns
+//  early so no message is ever sent twice.
+// ============================================================
+
+// Simple per-session cooldown so /ai can't be spammed.
+let __lastAiCall = 0;
+const __AI_COOLDOWN_MS = 8000; // 8s minimum between /ai calls
+
+// ────────────────────────────────────────────────────────────
+//  Standalone /ai handler. Returns TRUE if it handled the text
+//  (so sendMessage knows not to continue), FALSE otherwise.
+// ────────────────────────────────────────────────────────────
+async function handleAiCommand(text) {
+    const lower = text.toLowerCase();
+    if (lower !== "/ai" && !lower.startsWith("/ai ")) return false;
+
+    const query = text.slice(3).trim();
+    messageInput.value = "";
+
+    if (!query) {
+        showNotifyBanner("Usage: /ai <your question>");
+        return true;
+    }
+
+    // Cooldown to conserve edge calls
+    const now = Date.now();
+    if (now - __lastAiCall < __AI_COOLDOWN_MS) {
+        const wait = Math.ceil((__AI_COOLDOWN_MS - (now - __lastAiCall)) / 1000);
+        showNotifyBanner(`🐢 Slow down — try again in ${wait}s`);
+        return true;
+    }
+    __lastAiCall = now;
+
+    // Optimistic user message (renders immediately)
+    const tempId = makeId();
+    const tempMsg = {
+        id: tempId,
+        username: currentUser.username,
+        message: text,
+        timestamp: new Date().toLocaleString("en-US", {
+            month: "short", day: "numeric", year: "numeric",
+            hour: "numeric", minute: "2-digit", hour12: true,
+        }),
+        deleted: false,
+        replies: null,
+        server_id: currentServer,
+        created_at: new Date().toISOString(),
+    };
+    renderOneMessage(tempMsg, true);
+
+    // "Robot is thinking…" bubble
+    const typingEl = document.createElement("div");
+    typingEl.id = "robotTyping_" + tempId;
+    typingEl.className = "message otherMessage";
+    typingEl.innerHTML = `
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=robot"
+                 alt="robot"
+                 style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:#e0e0e0;">
+            <div><strong>robot</strong>: <em style="opacity:0.55;">is thinking…</em></div>
+        </div>`;
+    chatDiv.appendChild(typingEl);
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+
+    try {
+        // 🔌 ONLY place ai-bot is ever called
+        const response = await fetch(
+            "https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/ai-bot",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    query,
+                    server_id: currentServer,
+                    username: currentUser.username,
+                }),
+            }
+        );
+
+        const result = await response.json();
+        typingEl.remove();
+
+        if (!response.ok || !result.success) {
+            const detail = result.detail ? ` — ${result.detail}` : "";
+            showNotifyBanner("🤖 " + (result.error || "AI failed") + detail);
+            return true;
+        }
+
+        // For private servers, force a refresh so robot's reply shows
+        // up instantly. Public server gets it via Realtime.
+        if (currentServer !== "public") {
+            await refreshPrivateMessagesAfterAction();
+            notifyPrivateServerUpdate(currentServer, {
+                message: result.message?.content || "",
+                username: "robot",
+            });
+        }
+
+    } catch (e) {
+        typingEl.remove();
+        showNotifyBanner("Network error: " + e.message);
+    }
+
+    return true; // handled — sendMessage will stop here
+}
+
+// ────────────────────────────────────────────────────────────
+//  Normal sendMessage. Delegates to /ai handler first.
+// ────────────────────────────────────────────────────────────
+async function sendMessage() {
+    const text = (messageInput.value || '').trim();
+    if (!text || !currentUser) return;
+
+    // ✅ If this was a /ai command, it's fully handled — stop here.
+    const handled = await handleAiCommand(text);
+    if (handled) return;
+
+    // ↓↓↓ Regular message path continues unchanged ↓↓↓
+    const sessionToken =
+        localStorage.getItem("chatSession") || sessionStorage.getItem("chatSession");
+    if (!sessionToken) {
+        showNotifyBanner("Please login again");
+        return;
+    }
+
+    messageInput.value = "";
+
+    try {
+        const response = await fetch(
+            "https://qsplvexeqsbrsgrfczog.supabase.co/functions/v1/send-message",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${sessionToken}`,
+                },
+                body: JSON.stringify({
+                    message: text,
+                    server_id: currentServer,
+                }),
+            }
+        );
+
+        const result = await response.json();
+
+        if (response.status === 200 && result.success && result.message) {
+            if (currentServer !== "public") {
+                refreshPrivateMessagesAfterAction();
+                notifyPrivateServerUpdate(currentServer, {
+                    message: text,
+                    username: currentUser.username,
+                });
+            }
+
+            const newMsg = {
+                id: result.message.id,
+                username: result.message.username || currentUser.username,
+                message: result.message.content || result.message.message || text,
+                timestamp: result.message.created_at
+                    ? new Date(result.message.created_at).toLocaleString()
+                    : new Date().toLocaleString(),
+                deleted: false,
+                replies: result.message.replies || null,
+                server_id: result.message.server_id || currentServer,
+                created_at: result.message.created_at,
+            };
+
+            if (!messages.some((m) => m.id === newMsg.id)) {
+                messages.push(newMsg);
+                renderOneMessage(newMsg, true);
+            }
+
+            if (currentServer !== "public") {
+                await refreshPrivateMessagesAfterAction();
+            }
+        } else {
+            showNotifyBanner(result.error || "Failed to send message");
+        }
+    } catch (error) {
+        console.error("Network error:", error);
+        showNotifyBanner("Network error: " + error.message);
+    }
+}
 </script>
 
 
