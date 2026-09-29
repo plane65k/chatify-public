@@ -9877,19 +9877,37 @@ async function handleAiCommand(text) {
     renderOneMessage(tempMsg, true);
 
     // "Robot is thinking…" bubble
+        // "Robot is thinking…" bubble with RGBY wave dots
     const typingEl = document.createElement("div");
     typingEl.id = "robotTyping_" + tempId;
     typingEl.className = "message otherMessage";
     typingEl.innerHTML = `
-        <div style="display:flex;align-items:flex-start;gap:10px;">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=robot"
+        <style>
+            @keyframes aiWaveDot {
+                0%, 100% { transform: translateY(0);    opacity: 0.55; }
+                50%      { transform: translateY(-5px); opacity: 1;    }
+            }
+            .ai-wave-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                display: inline-block;
+                animation: aiWaveDot 1.2s ease-in-out infinite;
+            }
+        </style>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <img src="https://uxwing.com/wp-content/themes/uxwing/download/brands-and-social-media/google-gemini-icon.png"
                  alt="robot"
                  style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:#e0e0e0;">
-            <div><strong>robot</strong>: <em style="opacity:0.55;">is thinking…</em></div>
+            <div style="display:flex;align-items:center;gap:5px;padding:4px 0;">
+                <span class="ai-wave-dot" style="background:#ea4335; animation-delay:0s;"></span>
+                <span class="ai-wave-dot" style="background:#34a853; animation-delay:0.15s;"></span>
+                <span class="ai-wave-dot" style="background:#4285f4; animation-delay:0.3s;"></span>
+                <span class="ai-wave-dot" style="background:#fbbc05; animation-delay:0.45s;"></span>
+            </div>
         </div>`;
     chatDiv.appendChild(typingEl);
     chatDiv.scrollTop = chatDiv.scrollHeight;
-
     try {
         // 🔌 ONLY place ai-bot is ever called
         const response = await fetch(
